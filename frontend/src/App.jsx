@@ -23,7 +23,7 @@ import {
   Loader2
 } from 'lucide-react'
 import { useContacts } from './hooks/useContacts'
-import { useMessages, useWhatsApp, useEmail } from './hooks/useMessages'
+import { useMessages, useWhatsApp } from './hooks/useMessages'
 import { useStats } from './hooks/useStats'
 import { useConfig } from './hooks/useConfig'
 import { authService, sendWhatsAppMessage } from './services/api'
@@ -35,6 +35,10 @@ function App() {
   const [loginData, setLoginData] = useState({ username: '', password: '' })
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
+
+  // Estado global para mensajes programados y enviados
+  const [scheduledMessages, setScheduledMessages] = useState([])
+  const [sentMessages, setSentMessages] = useState([])
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -193,7 +197,7 @@ function App() {
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-3 border-t">
+        <div className="absolute bottom-0 left-0 right-0 p-3 border-t bg-white lg:static lg:bg-transparent">
           <Button
             variant="ghost"
             onClick={handleLogout}
@@ -239,9 +243,20 @@ function App() {
         <main className="p-6">
           {currentSection === 'inicio' && <InicioSection />}
           {currentSection === 'contactos' && <ContactosSection />}
-          {currentSection === 'mensajes' && <MensajesSection />}
-          {currentSection === 'programados' && <ProgramadosSection />}
-          {currentSection === 'historial' && <HistorialSection />}
+          {currentSection === 'mensajes' && (
+            <MensajesSection
+              scheduledMessages={scheduledMessages}
+              setScheduledMessages={setScheduledMessages}
+              sentMessages={sentMessages}
+              setSentMessages={setSentMessages}
+            />
+          )}
+          {currentSection === 'programados' && (
+            <ProgramadosSection scheduledMessages={scheduledMessages} />
+          )}
+          {currentSection === 'historial' && (
+            <HistorialSection sentMessages={sentMessages} />
+          )}
           {currentSection === 'configuracion' && <ConfiguracionSection />}
         </main>
       </div>
@@ -472,20 +487,21 @@ function ContactosSection() {
                 <thead className="bg-gray-50">
                   <tr>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Email</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Segmento</th>
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {contacts.map((contact) => (
-                    <tr key={contact.id}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{contact.name}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{contact.email}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{contact.phone}</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{contact.segment}</td>
-                    </tr>
-                  ))}
+                  {contacts
+                    .slice()
+                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+                    .map((contact) => (
+                      <tr key={contact.id}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{contact.name}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{contact.number}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{contact.segment || '-'}</td>
+                      </tr>
+                    ))}
                 </tbody>
               </table>
             </div>
@@ -496,64 +512,84 @@ function ContactosSection() {
   )
 }
 
-function MensajesSection() {
+function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages, setSentMessages }) {
   const { sendMessage, loading, error } = useMessages()
-  const { whatsappStatus, emailStatus, checkWhatsappStatus, checkEmailStatus } = useConfig()
+  const { whatsappStatus, checkWhatsappStatus } = useConfig()
+  const { contacts, loading: contactsLoading, error: contactsError } = useContacts()
   const [messageContent, setMessageContent] = useState('')
-  const [messageSubject, setMessageSubject] = useState('') // Solo para email
-  const [channel, setChannel] = useState('whatsapp')
-  const [recipients, setRecipients] = useState('all') // 'all', 'segment', 'custom'
-  const [selectedSegment, setSelectedSegment] = useState('general')
-  const [customRecipients, setCustomRecipients] = useState('')
-  const [sendResult, setSendResult] = useState(null)
-  const [waTo, setWaTo] = useState('')
-  const [waMsg, setWaMsg] = useState('')
-  const [waLoading, setWaLoading] = useState(false)
+  const [selectedContacts, setSelectedContacts] = useState([])
   const [waResult, setWaResult] = useState(null)
+  const [waLoading, setWaLoading] = useState(false)
+  const [schedule, setSchedule] = useState(false)
+  const [scheduledDate, setScheduledDate] = useState('')
+  // Buscador de contactos
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     checkWhatsappStatus()
-    checkEmailStatus()
   }, [])
 
-  const handleSendMessage = async (e) => {
-    e.preventDefault()
-    setSendResult(null)
+  // Efecto robusto para envío programado: un solo intervalo global
+  useEffect(() => {
+    let isProcessing = false;
+    const timer = setInterval(async () => {
+      if (isProcessing) return;
+      isProcessing = true;
+      setScheduledMessages((msgs) => {
+        const now = new Date();
+        // Buscar el primer mensaje pendiente y listo para enviar
+        const idx = msgs.findIndex(
+          (msg) => msg.status === 'Pendiente' && msg.date && !isNaN(new Date(msg.date).getTime()) && new Date(msg.date) <= now
+        );
+        if (idx === -1) return msgs;
+        const msg = msgs[idx];
+        // Marcar como Enviando
+        const updatedMsgs = msgs.map((m, i) =>
+          i === idx ? { ...m, status: 'Enviando' } : m
+        );
+        // Enviar fuera del setState para evitar problemas de concurrencia
+        setTimeout(async () => {
+          for (const to of msg.recipients) {
+            try {
+              await sendWhatsAppMessage({ to, message: msg.content });
+            } catch (err) {
+              console.error('Error enviando mensaje programado:', err);
+            }
+          }
+          setScheduledMessages((prev) =>
+            prev.map((m) =>
+              m.id === msg.id ? { ...m, status: 'Enviado', sentAt: new Date().toISOString() } : m
+            )
+          );
+          setSentMessages((prev) =>
+            prev.some((m) => m.id === msg.id)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    id: msg.id,
+                    content: msg.content,
+                    recipients: msg.recipients,
+                    date: msg.date,
+                    sentAt: new Date().toISOString(),
+                    status: 'Enviado',
+                  },
+                ]
+          );
+        }, 0);
+        return updatedMsgs;
+      });
+      isProcessing = false;
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [setScheduledMessages, setSentMessages])
 
-    if (!messageContent.trim()) {
-      setSendResult({ success: false, message: 'El contenido del mensaje no puede estar vacío.' })
-      return
-    }
-
-    if (channel === 'email' && !messageSubject.trim()) {
-      setSendResult({ success: false, message: 'El asunto del correo no puede estar vacío.' })
-      return
-    }
-
-    let finalRecipients = []
-    if (recipients === 'all') {
-      finalRecipients = ['all'] // El backend manejará esto
-    } else if (recipients === 'segment') {
-      finalRecipients = [selectedSegment]
-    } else if (recipients === 'custom') {
-      finalRecipients = customRecipients.split(',').map(r => r.trim()).filter(r => r)
-      if (finalRecipients.length === 0) {
-        setSendResult({ success: false, message: 'Debes especificar al menos un destinatario personalizado.' })
-        return
-      }
-    }
-
-    try {
-      const result = await sendMessage({
-        content: messageContent,
-        subject: messageSubject,
-        channel,
-        recipients: finalRecipients,
-      })
-      setSendResult(result)
-    } catch (err) {
-      setSendResult({ success: false, message: err.message || 'Error al enviar mensaje.' })
-    }
+  const handleContactCheck = (number) => {
+    setSelectedContacts((prev) =>
+      prev.includes(number)
+        ? prev.filter((n) => n !== number)
+        : [...prev, number]
+    )
   }
 
   const handleSendWhatsApp = async (e) => {
@@ -561,8 +597,44 @@ function MensajesSection() {
     setWaResult(null);
     setWaLoading(true);
     try {
-      await sendWhatsAppMessage({ to: waTo, message: waMsg });
-      setWaResult({ success: true, message: 'Mensaje enviado correctamente.' });
+      if (schedule && scheduledDate) {
+        // Guardar mensaje programado en el estado global
+        setScheduledMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now(),
+            content: messageContent,
+            recipients: selectedContacts,
+            date: scheduledDate,
+            status: 'Pendiente',
+          },
+        ])
+        setWaResult({ success: true, message: 'Mensaje programado correctamente.' });
+        setMessageContent('');
+        setSelectedContacts([]);
+        setScheduledDate('');
+        setSchedule(false);
+        setWaLoading(false);
+        return;
+      }
+      // Envío inmediato a todos los seleccionados
+      for (const to of selectedContacts) {
+        await sendWhatsAppMessage({ to, message: messageContent });
+      }
+      // Guardar en historial de enviados
+      setSentMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now(),
+          content: messageContent,
+          recipients: selectedContacts,
+          date: new Date().toISOString(),
+          status: 'Enviado',
+        },
+      ])
+      setWaResult({ success: true, message: 'Mensaje(s) enviado(s) correctamente.' });
+      setMessageContent('');
+      setSelectedContacts([]);
     } catch (err) {
       setWaResult({ success: false, message: err.message });
     } finally {
@@ -570,90 +642,26 @@ function MensajesSection() {
     }
   };
 
+  // Filtrar contactos por búsqueda
+  const filteredContacts = contacts
+    .slice()
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    .filter(contact =>
+      contact.name?.toLowerCase().includes(search.toLowerCase()) ||
+      contact.number?.toLowerCase().includes(search.toLowerCase())
+    )
+
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900">Crear y Enviar Mensajes</h2>
-      <p className="text-gray-600">Redacta tus mensajes y selecciona el canal de envío.</p>
+      <p className="text-gray-600">Redacta tu mensaje y selecciona los destinatarios.</p>
 
       <Card>
         <CardHeader>
-          <CardTitle>Estado de Canales</CardTitle>
-          <CardDescription>Verifica la conexión de tus servicios de envío.</CardDescription>
+          <CardTitle>Contenido del Mensaje</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-2">
-          <div className="flex items-center space-x-2">
-            {whatsappStatus.connected ? (
-              <CheckCircle className="w-5 h-5 text-green-500" />
-            ) : (
-              <AlertCircle className="w-5 h-5 text-red-500" />
-            )}
-            <span className="font-medium">WhatsApp:</span>
-            <span className={`${whatsappStatus.connected ? 'text-green-600' : 'text-red-600'}`}>
-              {whatsappStatus.connected ? 'Conectado' : 'Desconectado'}
-            </span>
-            {whatsappStatus.connected && whatsappStatus.phoneNumber && (
-              <span className="text-sm text-gray-500">({whatsappStatus.phoneNumber})</span>
-            )}
-            <Button variant="ghost" size="sm" onClick={checkWhatsappStatus} disabled={whatsappStatus.loading}>
-              {whatsappStatus.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refrescar'}
-            </Button>
-          </div>
-          <div className="flex items-center space-x-2">
-            {emailStatus.connected ? (
-              <CheckCircle className="w-5 h-5 text-green-500" />
-            ) : (
-              <AlertCircle className="w-5 h-5 text-red-500" />
-            )}
-            <span className="font-medium">Email (SMTP):</span>
-            <span className={`${emailStatus.connected ? 'text-green-600' : 'text-red-600'}`}>
-              {emailStatus.connected ? 'Conectado' : 'Desconectado'}
-            </span>
-            <Button variant="ghost" size="sm" onClick={checkEmailStatus} disabled={emailStatus.loading}>
-              {emailStatus.loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Refrescar'}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      <form onSubmit={handleSendMessage} className="space-y-4">
-        <Card>
-          <CardHeader>
-            <CardTitle>Contenido del Mensaje</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex space-x-4">
-              <Button
-                type="button"
-                variant={channel === 'whatsapp' ? 'default' : 'outline'}
-                onClick={() => setChannel('whatsapp')}
-                className="flex-1"
-              >
-                <Phone className="w-4 h-4 mr-2" /> WhatsApp
-              </Button>
-              <Button
-                type="button"
-                variant={channel === 'email' ? 'default' : 'outline'}
-                onClick={() => setChannel('email')}
-                className="flex-1"
-              >
-                <Mail className="w-4 h-4 mr-2" /> Email
-              </Button>
-            </div>
-            
-            {channel === 'email' && (
-              <div className="space-y-2">
-                <Label htmlFor="subject">Asunto del Correo</Label>
-                <Input
-                  id="subject"
-                  type="text"
-                  placeholder="Asunto de tu correo promocional"
-                  value={messageSubject}
-                  onChange={(e) => setMessageSubject(e.target.value)}
-                  required
-                />
-              </div>
-            )}
-
+        <CardContent className="space-y-4">
+          <form onSubmit={handleSendWhatsApp} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="messageContent">Mensaje</Label>
               <textarea
@@ -666,131 +674,58 @@ function MensajesSection() {
                 required
               />
             </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Destinatarios</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-col space-y-2">
-              <Label>Seleccionar Destinatarios</Label>
-              <div className="flex space-x-4">
-                <Button
-                  type="button"
-                  variant={recipients === 'all' ? 'default' : 'outline'}
-                  onClick={() => setRecipients('all')}
-                  className="flex-1"
-                >
-                  Todos los Contactos
-                </Button>
-                <Button
-                  type="button"
-                  variant={recipients === 'segment' ? 'default' : 'outline'}
-                  onClick={() => setRecipients('segment')}
-                  className="flex-1"
-                >
-                  Por Segmento
-                </Button>
-                <Button
-                  type="button"
-                  variant={recipients === 'custom' ? 'default' : 'outline'}
-                  onClick={() => setRecipients('custom')}
-                  className="flex-1"
-                >
-                  Personalizado
-                </Button>
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="waTo">Destinatarios</Label>
+              <Input
+                type="text"
+                placeholder="Buscar contacto por nombre o número..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                className="mb-2"
+              />
+              {contactsLoading ? (
+                <div className="text-gray-500">Cargando contactos...</div>
+              ) : contactsError ? (
+                <div className="text-red-500">Error al cargar contactos</div>
+              ) : (
+                <div className="border rounded p-2 max-h-48 overflow-y-auto bg-gray-50">
+                  {filteredContacts.map(contact => (
+                    <label key={contact.id} className="flex items-center space-x-2 py-1 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedContacts.includes(contact.number)}
+                        onChange={() => handleContactCheck(contact.number)}
+                      />
+                      <span>{contact.name} ({contact.number})</span>
+                    </label>
+                  ))}
+                  {filteredContacts.length === 0 && (
+                    <div className="text-xs text-gray-400 px-2 py-1">No se encontraron contactos.</div>
+                  )}
+                </div>
+              )}
+              <div className="text-xs text-gray-500 mt-1">Seleccionados: {selectedContacts.length}</div>
             </div>
-
-            {recipients === 'segment' && (
-              <div className="space-y-2">
-                <Label htmlFor="segment">Seleccionar Segmento</Label>
-                <select
-                  id="segment"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  value={selectedSegment}
-                  onChange={(e) => setSelectedSegment(e.target.value)}
-                >
-                  <option value="general">General</option>
-                  <option value="vip">VIP</option>
-                  <option value="new">Nuevos</option>
-                  <option value="inactive">Inactivos</option>
-                </select>
-              </div>
-            )}
-
-            {recipients === 'custom' && (
-              <div className="space-y-2">
-                <Label htmlFor="customRecipients">Destinatarios Personalizados (separados por coma)</Label>
-                <textarea
-                  id="customRecipients"
-                  rows="3"
-                  className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  placeholder="ej: +1234567890, +1987654321 (para WhatsApp) o email1@ejemplo.com, email2@ejemplo.com (para Email)"
-                  value={customRecipients}
-                  onChange={(e) => setCustomRecipients(e.target.value)}
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id="schedule"
+                checked={schedule}
+                onChange={e => setSchedule(e.target.checked)}
+              />
+              <Label htmlFor="schedule">Programar mensaje</Label>
+              {schedule && (
+                <input
+                  type="datetime-local"
+                  className="ml-2 border rounded px-2 py-1"
+                  value={scheduledDate}
+                  onChange={e => setScheduledDate(e.target.value)}
+                  required={schedule}
                 />
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {sendResult && (
-          <Alert variant={sendResult.success ? "default" : "destructive"}>
-            {sendResult.success ? (
-              <CheckCircle className="h-4 w-4" />
-            ) : (
-              <AlertCircle className="h-4 w-4" />
-            )}
-            <AlertDescription>
-              {sendResult.success 
-                ? `Mensaje enviado exitosamente. Enviados: ${sendResult.sent}, Fallidos: ${sendResult.failed}.`
-                : sendResult.message}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <Button 
-          type="submit" 
-          className="w-full h-11 bg-blue-600 hover:bg-blue-700"
-          disabled={loading}
-        >
-          {loading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Enviando...
-            </>
-          ) : (
-            'Enviar Mensaje'
-          )}
-        </Button>
-      </form>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Prueba WhatsApp-web.js</CardTitle>
-          <CardDescription>Envía un mensaje directo usando tu sesión WhatsApp-web.js</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSendWhatsApp} className="space-y-2">
-            <Input
-              type="text"
-              placeholder="Número (ej: 549XXXXXXXXXX)"
-              value={waTo}
-              onChange={e => setWaTo(e.target.value)}
-              required
-            />
-            <Input
-              type="text"
-              placeholder="Mensaje"
-              value={waMsg}
-              onChange={e => setWaMsg(e.target.value)}
-              required
-            />
-            <Button type="submit" disabled={waLoading} className="w-full">
-              {waLoading ? 'Enviando...' : 'Enviar WhatsApp'}
+              )}
+            </div>
+            <Button type="submit" disabled={waLoading || !messageContent || selectedContacts.length === 0 || (schedule && !scheduledDate)} className="w-full">
+              {waLoading ? (schedule ? 'Programando...' : 'Enviando...') : (schedule ? 'Programar Mensaje' : 'Enviar WhatsApp')}
             </Button>
             {waResult && (
               <div className={waResult.success ? 'text-green-600' : 'text-red-600'}>
@@ -804,18 +739,23 @@ function MensajesSection() {
   )
 }
 
-function ProgramadosSection() {
-  const [scheduledMessages, setScheduledMessages] = useState([
-    { id: 1, title: 'Ofertas de Primavera', channel: 'whatsapp', date: '2025-03-15 10:00 AM', status: 'Pendiente', recipients: 'VIP' },
-    { id: 2, title: 'Newsletter Mensual', channel: 'email', date: '2025-03-20 09:00 AM', status: 'Enviado', recipients: 'Todos' },
-    { id: 3, title: 'Recordatorio de Pago', channel: 'whatsapp', date: '2025-03-22 02:00 PM', status: 'Fallido', recipients: 'Inactivos' },
-  ])
+function ProgramadosSection({ scheduledMessages }) {
+  // Reloj en tiempo real
+  const [now, setNow] = useState(new Date())
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Envíos Programados</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-bold text-gray-900">Envíos Programados</h2>
+        <div className="text-sm text-gray-600 font-mono bg-gray-100 rounded px-3 py-1">
+          Hora actual: {now.toLocaleString()}
+        </div>
+      </div>
       <p className="text-gray-600">Gestiona tus mensajes programados para envío futuro.</p>
-
       <Card>
         <CardHeader>
           <CardTitle>Próximos Envíos</CardTitle>
@@ -825,18 +765,18 @@ function ProgramadosSection() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Título</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Canal</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mensaje</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha/Hora</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destinatarios</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {scheduledMessages.map((msg) => (
+                {scheduledMessages.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-4 text-gray-400">No hay mensajes programados.</td></tr>
+                ) : scheduledMessages.map((msg) => (
                   <tr key={msg.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{msg.title}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{msg.channel}</td>
+                    <td className="px-6 py-4 whitespace-pre-wrap text-sm font-medium text-gray-900">{msg.content}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.date}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -847,7 +787,7 @@ function ProgramadosSection() {
                         {msg.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.recipients}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.recipients.length} contacto(s)</td>
                   </tr>
                 ))}
               </tbody>
@@ -859,7 +799,7 @@ function ProgramadosSection() {
   )
 }
 
-function HistorialSection() {
+function HistorialSection({ sentMessages }) {
   const { historyStats, loading, error } = useStats()
 
   if (loading) {
@@ -887,10 +827,10 @@ function HistorialSection() {
     whatsappSent: 10000,
     emailSent: 5000,
     recentSends: [
-      { id: 1, campaign: 'Oferta Black Friday', date: '2024-11-29', channel: 'email', status: 'delivered', sent: 5000, delivered: 4900, failed: 100 },
-      { id: 2, campaign: 'Lanzamiento Nuevo Producto', date: '2025-01-10', channel: 'whatsapp', status: 'delivered', sent: 3000, delivered: 2950, failed: 50 },
-      { id: 3, campaign: 'Encuesta de Satisfacción', date: '2025-02-01', channel: 'email', status: 'delivered', sent: 2000, delivered: 1980, failed: 20 },
-      { id: 4, campaign: 'Promoción Verano', date: '2025-03-05', channel: 'whatsapp', status: 'failed', sent: 1000, delivered: 800, failed: 200 },
+      { id: 1, campaign: 'Oferta Black Friday', date: '2024-11-29', channel: 'whatsapp', status: 'delivered', sent: 5000, delivered: 4900, failed: 100, content: '¡Aprovecha nuestras ofertas!' },
+      { id: 2, campaign: 'Lanzamiento Nuevo Producto', date: '2025-01-10', channel: 'whatsapp', status: 'delivered', sent: 3000, delivered: 2950, failed: 50, content: '¡Nuevo producto disponible!' },
+      { id: 3, campaign: 'Encuesta de Satisfacción', date: '2025-02-01', channel: 'whatsapp', status: 'delivered', sent: 2000, delivered: 1980, failed: 20, content: '¿Qué te pareció nuestro servicio?' },
+      { id: 4, campaign: 'Promoción Verano', date: '2025-03-05', channel: 'whatsapp', status: 'failed', sent: 1000, delivered: 800, failed: 200, content: '¡Promoción de verano!' },
     ]
   }
 
@@ -929,32 +869,28 @@ function HistorialSection() {
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
                 <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Campaña</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mensaje</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Canal</th>
                   <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Enviados</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Entregados</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fallidos</th>
+                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destinatarios</th>
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-gray-200">
-                {stats.recentSends.map((send) => (
-                  <tr key={send.id}>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{send.campaign}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{send.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{send.channel}</td>
+                {sentMessages.length === 0 ? (
+                  <tr><td colSpan={4} className="text-center py-4 text-gray-400">No hay mensajes enviados.</td></tr>
+                ) : sentMessages.map((msg) => (
+                  <tr key={msg.id}>
+                    <td className="px-6 py-4 whitespace-pre-wrap text-sm text-gray-900">{msg.content}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.date}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                       <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        send.status === 'delivered' ? 'bg-green-100 text-green-800' :
-                        'bg-red-100 text-red-800'
+                        msg.status === 'Enviado' ? 'bg-green-100 text-green-800' :
+                        'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {send.status === 'delivered' ? 'Entregado' : 'Fallido'}
+                        {msg.status}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{send.sent.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{send.delivered.toLocaleString()}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{send.failed.toLocaleString()}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.recipients.length} contacto(s)</td>
                   </tr>
                 ))}
               </tbody>

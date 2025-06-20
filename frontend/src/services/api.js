@@ -21,19 +21,13 @@ const authService = {
   },
 };
 
-// Servicio de contactos simulado
+// Servicio de contactos real usando el backend de WhatsApp
 const contactsService = {
   getContacts: async () => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve([
-          { id: 1, name: 'Juan Pérez', email: 'juan.perez@example.com', phone: '+1234567890', segment: 'general' },
-          { id: 2, name: 'María García', email: 'maria.garcia@example.com', phone: '+1987654321', segment: 'vip' },
-          { id: 3, name: 'Carlos López', email: 'carlos.lopez@example.com', phone: '+1122334455', segment: 'new' },
-          { id: 4, name: 'Ana Rodríguez', email: 'ana.rodriguez@example.com', phone: '+1554433221', segment: 'inactive' },
-        ]);
-      }, 1000);
-    });
+    // Llama al backend para obtener los contactos reales de WhatsApp
+    const res = await fetch('http://localhost:3001/api/wa-contacts');
+    if (!res.ok) throw new Error('No se pudieron obtener los contactos');
+    return await res.json();
   },
   importContacts: async (file) => {
     return new Promise(resolve => {
@@ -48,10 +42,10 @@ const contactsService = {
 
 // Servicio de mensajes simulado
 const messagesService = {
-  sendMessage: async ({ content, subject, channel, recipients }) => {
+  sendMessage: async ({ content, channel, recipients }) => {
     return new Promise(resolve => {
       setTimeout(() => {
-        console.log(`Simulando envío de mensaje por ${channel}:`, { content, subject, recipients });
+        console.log(`Simulando envío de mensaje por ${channel}:`, { content, recipients });
         resolve({ success: true, sent: 100, failed: 0 });
       }, 1500);
     });

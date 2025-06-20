@@ -27,9 +27,4 @@ export function useWhatsApp() {
   return {};
 }
 
-export function useEmail() {
-  // Implementación futura para funcionalidades específicas de Email
-  return {};
-}
-
 
