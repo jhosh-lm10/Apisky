@@ -11,7 +11,11 @@ app.use(express.json());
 // Inicializar cliente WhatsApp
 const client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: { headless: true, args: ['--no-sandbox'] }
+    puppeteer: {
+        headless: true,
+        args: ['--no-sandbox'],
+        executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' // Cambia la ruta si tu Chrome está en otro lugar
+    }
 });
 
 let qrCodeString = null;
