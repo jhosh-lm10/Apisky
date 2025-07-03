@@ -1,8 +1,12 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const { Client, LocalAuth } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
+
+let Client, LocalAuth, qrcode;
+if (process.env.NODE_ENV !== 'test') {
+  ({ Client, LocalAuth } = require('whatsapp-web.js'));
+  qrcode = require('qrcode-terminal');
+}
 
 const app = express();
 app.use(cors());
@@ -12,41 +16,59 @@ app.use(express.json());
 const chromePath = process.env.CHROME_PATH ||
   'C:/Program Files/Google/Chrome/Application/chrome.exe';
 
-// Inicializar cliente WhatsApp
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: ['--no-sandbox'],
-        executablePath: chromePath // cambia mediante CHROME_PATH si es necesario
-    }
-});
-
+// Inicializar cliente WhatsApp o stubs en entorno de pruebas
+let client;
 let qrCodeString = null;
 let isReady = false;
 
-client.on('qr', (qr) => {
+if (process.env.NODE_ENV !== 'test') {
+  client = new Client({
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+      headless: true,
+      args: ['--no-sandbox'],
+      executablePath: chromePath // cambia mediante CHROME_PATH si es necesario
+    }
+  });
+
+  client.on('qr', (qr) => {
     qrCodeString = qr;
     qrcode.generate(qr, { small: true });
     console.log('Escanea este QR con WhatsApp para iniciar sesión');
-});
+  });
 
-client.on('ready', () => {
+  client.on('ready', () => {
     isReady = true;
     console.log('WhatsApp Web conectado y listo!');
-});
+  });
 
-client.on('auth_failure', () => {
+  client.on('auth_failure', () => {
     isReady = false;
     console.log('Fallo de autenticación, reinicia el cliente.');
-});
+  });
 
-client.on('disconnected', () => {
+  client.on('disconnected', () => {
     isReady = false;
     console.log('Cliente desconectado, esperando nuevo QR...');
-});
+  });
 
-client.initialize();
+  client.initialize();
+} else {
+  client = {
+    sendMessage: async () => true,
+    getContacts: async () => [
+      {
+        pushname: 'Test',
+        name: 'Test',
+        number: '12345',
+        id: { _serialized: '12345@c.us' },
+        isUser: true,
+      },
+    ],
+  };
+  isReady = true;
+  qrCodeString = 'TEST_QR';
+}
 
 // Endpoint para obtener el QR
 app.get('/api/wa-qr', (req, res) => {
@@ -96,6 +118,11 @@ app.get('/api/wa-contacts', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+
+if (require.main === module) {
+  app.listen(PORT, () => {
     console.log(`Backend WhatsApp escuchando en puerto ${PORT}`);
-});
+  });
+}
+
+module.exports = app;
