@@ -26,8 +26,12 @@ Este backend está construido con Node.js y Express. Provee endpoints para:
 ```
 # Puerto opcional para el servidor
 PORT=3001
+# Ruta al ejecutable de Chrome
+# (por defecto se usa C:/Program Files/Google/Chrome/Application/chrome.exe)
+CHROME_PATH=C:/Program Files/Google/Chrome/Application/chrome.exe
 ```
 
 ## Notas
 - Personaliza los endpoints según tus necesidades.
 - Este backend es solo un punto de partida.
+- Si el cliente de WhatsApp no inicia, revisa la ruta definida en `CHROME_PATH`.

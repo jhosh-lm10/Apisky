@@ -8,13 +8,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Leer ruta de Chrome desde variable de entorno con valor por defecto
+const chromePath = process.env.CHROME_PATH ||
+  'C:/Program Files/Google/Chrome/Application/chrome.exe';
+
 // Inicializar cliente WhatsApp
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
         headless: true,
         args: ['--no-sandbox'],
-        executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' // Cambia la ruta si tu Chrome está en otro lugar
+        executablePath: chromePath // cambia mediante CHROME_PATH si es necesario
     }
 });
 
