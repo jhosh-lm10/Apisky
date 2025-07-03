@@ -24,6 +24,8 @@ Este backend está construido con Node.js y Express. Provee endpoints para:
 ```
 ULTRAMSG_TOKEN=tu_token_ultramsg
 ULTRAMSG_INSTANCE=tu_instance_ultramsg
+# Opcional: ruta a Chrome para Puppeteer
+CHROME_PATH=/ruta/a/chrome
 ```
 
 ## Notas
