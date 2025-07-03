@@ -1,8 +1,8 @@
 # Apisky Backend
 
 Este backend está construido con Node.js y Express. Provee endpoints para:
-- Enviar mensajes de WhatsApp (ejemplo con UltraMsg)
-- Guardar y obtener configuración de integración
+- Obtener el QR de WhatsApp Web y verificar el estado de la sesión
+- Enviar mensajes y listar contactos de WhatsApp
 
 ## Instalación
 
@@ -17,13 +17,15 @@ Este backend está construido con Node.js y Express. Provee endpoints para:
    ```
 
 ## Endpoints principales
-- `POST /api/send-whatsapp` — Enviar mensaje de WhatsApp
-- `GET /api/config` y `POST /api/config` — Obtener/guardar configuración
+- `GET /api/wa-qr` — Obtener el código QR para iniciar sesión
+- `GET /api/wa-status` — Verificar si el cliente está listo
+- `POST /api/send-wa` — Enviar mensaje de WhatsApp
+- `GET /api/wa-contacts` — Obtener contactos de WhatsApp
 
 ## Ejemplo de archivo `.env`
 ```
-ULTRAMSG_TOKEN=tu_token_ultramsg
-ULTRAMSG_INSTANCE=tu_instance_ultramsg
+# Puerto opcional para el servidor
+PORT=3001
 ```
 
 ## Notas
