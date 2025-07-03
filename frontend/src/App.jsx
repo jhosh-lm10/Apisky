@@ -1,1087 +1,120 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useLocation } from 'react-router-dom'
 import { Button } from '@/components/ui/button.jsx'
-import { Input } from '@/components/ui/input.jsx'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
-import { Label } from '@/components/ui/label.jsx'
-import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
-import { 
-  Home, 
-  Users, 
-  MessageSquare, 
-  Clock, 
-  BarChart3, 
-  Settings,
-  Send,
-  Upload,
-  Mail,
-  Phone,
-  LogOut,
-  Menu,
-  X,
-  CheckCircle,
-  AlertCircle,
-  Loader2
-} from 'lucide-react'
-import { useContacts } from './hooks/useContacts'
-import { useMessages, useWhatsApp } from './hooks/useMessages'
-import { useStats } from './hooks/useStats'
-import { useConfig } from './hooks/useConfig'
-import { authService, sendWhatsAppMessage } from './services/api'
+import { Send, Home, Users, MessageSquare, Clock, BarChart3, Settings, LogOut, Menu, X } from 'lucide-react'
+import Login from '@/pages/Login.jsx'
+import Inicio from '@/pages/Inicio.jsx'
+import Contactos from '@/pages/Contactos.jsx'
+import Mensajes from '@/pages/Mensajes.jsx'
+import Programados from '@/pages/Programados.jsx'
+import Historial from '@/pages/Historial.jsx'
+import Configuracion from '@/pages/Configuracion.jsx'
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [currentSection, setCurrentSection] = useState('inicio')
+  const [username, setUsername] = useState('')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
-  const [loginData, setLoginData] = useState({ username: '', password: '' })
-  const [loginLoading, setLoginLoading] = useState(false)
-  const [loginError, setLoginError] = useState('')
-
-  // Estado global para mensajes programados y enviados
   const [scheduledMessages, setScheduledMessages] = useState([])
   const [sentMessages, setSentMessages] = useState([])
 
-  const handleLogin = async (e) => {
-    e.preventDefault()
-    if (!loginData.username || !loginData.password) {
-      setLoginError('Por favor ingresa usuario y contraseña')
-      return
-    }
-
-    setLoginLoading(true)
-    setLoginError('')
-
-    try {
-      const response = await authService.login(loginData)
-      if (response.success) {
-        setIsLoggedIn(true)
-        setCurrentSection('inicio')
-        setLoginError('')
-      }
-    } catch (error) {
-      setLoginError('Error al iniciar sesión. Verifica tus credenciales.')
-    } finally {
-      setLoginLoading(false)
-    }
-  }
-
-  const handleLogout = async () => {
-    try {
-      await authService.logout()
-      setIsLoggedIn(false)
-      setLoginData({ username: '', password: '' })
-      setCurrentSection('inicio')
-      setIsMobileMenuOpen(false)
-    } catch (error) {
-      console.error('Error al cerrar sesión:', error)
-    }
-  }
-
   const menuItems = [
-    { id: 'inicio', label: 'Inicio', icon: Home },
-    { id: 'contactos', label: 'Contactos', icon: Users },
-    { id: 'mensajes', label: 'Mensajes', icon: MessageSquare },
-    { id: 'programados', label: 'Envíos programados', icon: Clock },
-    { id: 'historial', label: 'Historial y estadísticas', icon: BarChart3 },
-    { id: 'configuracion', label: 'Configuración', icon: Settings },
+    { path: '/inicio', label: 'Inicio', icon: Home },
+    { path: '/contactos', label: 'Contactos', icon: Users },
+    { path: '/mensajes', label: 'Mensajes', icon: MessageSquare },
+    { path: '/programados', label: 'Envíos programados', icon: Clock },
+    { path: '/historial', label: 'Historial y estadísticas', icon: BarChart3 },
+    { path: '/configuracion', label: 'Configuración', icon: Settings },
   ]
 
   if (!isLoggedIn) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md shadow-xl">
-          <CardHeader className="space-y-1 text-center">
-            <div className="mx-auto mb-4 w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
-              <Send className="w-8 h-8 text-white" />
-            </div>
-            <CardTitle className="text-2xl font-bold text-gray-900">PIsky</CardTitle>
-            <CardDescription className="text-gray-600">
-              Gestión de mensajes promocionales
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              {loginError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{loginError}</AlertDescription>
-                </Alert>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="username">Usuario</Label>
-                <Input
-                  id="username"
-                  type="text"
-                  placeholder="Ingresa tu usuario"
-                  value={loginData.username}
-                  onChange={(e) => setLoginData({...loginData, username: e.target.value})}
-                  className="h-11"
-                  disabled={loginLoading}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
-                <Input
-                  id="password"
-                  type="password"
-                  placeholder="Ingresa tu contraseña"
-                  value={loginData.password}
-                  onChange={(e) => setLoginData({...loginData, password: e.target.value})}
-                  className="h-11"
-                  disabled={loginLoading}
-                  required
-                />
-              </div>
-              <Button 
-                type="submit" 
-                className="w-full h-11 bg-blue-600 hover:bg-blue-700"
-                disabled={loginLoading}
-              >
-                {loginLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Iniciando sesión...
-                  </>
-                ) : (
-                  'Iniciar sesión'
-                )}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <Login onSuccess={(user) => { setIsLoggedIn(true); setUsername(user) }} />
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
-      {/* Sidebar */}
+    <Router>
+      <Layout
+        username={username}
+        menuItems={menuItems}
+        isMobileMenuOpen={isMobileMenuOpen}
+        setIsMobileMenuOpen={setIsMobileMenuOpen}
+        onLogout={() => setIsLoggedIn(false)}
+      >
+        <Routes>
+          <Route path='/' element={<Navigate to='/inicio' />} />
+          <Route path='/inicio' element={<Inicio />} />
+          <Route path='/contactos' element={<Contactos />} />
+          <Route path='/mensajes' element={<Mensajes scheduledMessages={scheduledMessages} setScheduledMessages={setScheduledMessages} sentMessages={sentMessages} setSentMessages={setSentMessages} />} />
+          <Route path='/programados' element={<Programados scheduledMessages={scheduledMessages} />} />
+          <Route path='/historial' element={<Historial sentMessages={sentMessages} />} />
+          <Route path='/configuracion' element={<Configuracion />} />
+        </Routes>
+      </Layout>
+    </Router>
+  )
+}
+
+function Layout({ username, menuItems, isMobileMenuOpen, setIsMobileMenuOpen, onLogout, children }) {
+  const location = useLocation()
+  const currentLabel = menuItems.find(item => item.path === location.pathname)?.label || 'PIsky'
+
+  return (
+    <div className='min-h-screen bg-gray-50 flex'>
       <div className={`fixed inset-y-0 left-0 z-50 w-64 bg-white shadow-lg transform ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 lg:transform-none`}>
-        <div className="flex items-center justify-between h-16 px-6 border-b">
-          <div className="flex items-center space-x-3">
-            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Send className="w-5 h-5 text-white" />
+        <div className='flex items-center justify-between h-16 px-6 border-b'>
+          <div className='flex items-center space-x-3'>
+            <div className='w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center'>
+              <Send className='w-5 h-5 text-white' />
             </div>
-            <span className="text-xl font-bold text-gray-900">PIsky</span>
+            <span className='text-xl font-bold text-gray-900'>PIsky</span>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            className="lg:hidden"
-            onClick={() => setIsMobileMenuOpen(false)}
-          >
-            <X className="w-5 h-5" />
+          <Button variant='ghost' size='sm' className='lg:hidden' onClick={() => setIsMobileMenuOpen(false)}>
+            <X className='w-5 h-5' />
           </Button>
         </div>
-        
-        <nav className="mt-6 px-3">
-          {menuItems.map((item) => {
+        <nav className='mt-6 px-3'>
+          {menuItems.map(item => {
             const Icon = item.icon
             return (
-              <button
-                key={item.id}
-                onClick={() => {
-                  setCurrentSection(item.id)
-                  setIsMobileMenuOpen(false)
-                }}
+              <Link
+                key={item.path}
+                to={item.path}
+                onClick={() => setIsMobileMenuOpen(false)}
                 className={`w-full flex items-center space-x-3 px-3 py-3 text-left rounded-lg transition-colors ${
-                  currentSection === item.id
+                  location.pathname === item.path
                     ? 'bg-blue-50 text-blue-700 border-r-2 border-blue-600'
                     : 'text-gray-700 hover:bg-gray-50'
                 }`}
               >
-                <Icon className="w-5 h-5" />
-                <span className="font-medium">{item.label}</span>
-              </button>
+                <Icon className='w-5 h-5' />
+                <span className='font-medium'>{item.label}</span>
+              </Link>
             )
           })}
         </nav>
-
-        <div className="absolute bottom-0 left-0 right-0 p-3 border-t bg-white lg:static lg:bg-transparent">
-          <Button
-            variant="ghost"
-            onClick={handleLogout}
-            className="w-full justify-start text-gray-700 hover:text-red-600 hover:bg-red-50"
-          >
-            <LogOut className="w-5 h-5 mr-3" />
+        <div className='absolute bottom-0 left-0 right-0 p-3 border-t bg-white lg:static lg:bg-transparent'>
+          <Button variant='ghost' onClick={onLogout} className='w-full justify-start text-gray-700 hover:text-red-600 hover:bg-red-50'>
+            <LogOut className='w-5 h-5 mr-3' />
             Cerrar sesión
           </Button>
         </div>
       </div>
-
-      {/* Mobile menu overlay */}
       {isMobileMenuOpen && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden"
-          onClick={() => setIsMobileMenuOpen(false)}
-        />
+        <div className='fixed inset-0 bg-black bg-opacity-50 z-40 lg:hidden' onClick={() => setIsMobileMenuOpen(false)} />
       )}
-
-      {/* Main content */}
-      <div className="flex-1 lg:ml-0">
-        {/* Header */}
-        <header className="bg-white shadow-sm border-b h-16 flex items-center justify-between px-6">
-          <div className="flex items-center space-x-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="lg:hidden"
-              onClick={() => setIsMobileMenuOpen(true)}
-            >
-              <Menu className="w-5 h-5" />
+      <div className='flex-1 lg:ml-0'>
+        <header className='bg-white shadow-sm border-b h-16 flex items-center justify-between px-6'>
+          <div className='flex items-center space-x-4'>
+            <Button variant='ghost' size='sm' className='lg:hidden' onClick={() => setIsMobileMenuOpen(true)}>
+              <Menu className='w-5 h-5' />
             </Button>
-            <h1 className="text-xl font-semibold text-gray-900 capitalize">
-              {menuItems.find(item => item.id === currentSection)?.label || 'PIsky'}
-            </h1>
+            <h1 className='text-xl font-semibold text-gray-900 capitalize'>{currentLabel}</h1>
           </div>
-          <div className="text-sm text-gray-600">
-            Bienvenido, {loginData.username}
-          </div>
+          <div className='text-sm text-gray-600'>Bienvenido, {username}</div>
         </header>
-
-        {/* Content */}
-        <main className="p-6">
-          {currentSection === 'inicio' && <InicioSection />}
-          {currentSection === 'contactos' && <ContactosSection />}
-          {currentSection === 'mensajes' && (
-            <MensajesSection
-              scheduledMessages={scheduledMessages}
-              setScheduledMessages={setScheduledMessages}
-              sentMessages={sentMessages}
-              setSentMessages={setSentMessages}
-            />
-          )}
-          {currentSection === 'programados' && (
-            <ProgramadosSection scheduledMessages={scheduledMessages} />
-          )}
-          {currentSection === 'historial' && (
-            <HistorialSection sentMessages={sentMessages} />
-          )}
-          {currentSection === 'configuracion' && <ConfiguracionSection />}
-        </main>
+        <main className='p-6'>{children}</main>
       </div>
-    </div>
-  )
-}
-
-// Componentes de las secciones
-function InicioSection() {
-  const { dashboardStats, loading, error } = useStats()
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Cargando estadísticas...</span>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    )
-  }
-
-  const stats = dashboardStats || {
-    totalContacts: 1234,
-    messagesSent: 5678,
-    deliveryRate: 94.2,
-    scheduledMessages: 23
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Contactos</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalContacts.toLocaleString()}</p>
-                {stats.monthlyGrowth?.contacts && (
-                  <p className="text-xs text-green-600">+{stats.monthlyGrowth.contacts}% vs mes anterior</p>
-                )}
-              </div>
-              <Users className="w-8 h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Mensajes Enviados</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.messagesSent.toLocaleString()}</p>
-                {stats.monthlyGrowth?.messages && (
-                  <p className="text-xs text-green-600">+{stats.monthlyGrowth.messages}% vs mes anterior</p>
-                )}
-              </div>
-              <Send className="w-8 h-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Tasa de Entrega</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.deliveryRate}%</p>
-                {stats.monthlyGrowth?.deliveryRate && (
-                  <p className="text-xs text-green-600">+{stats.monthlyGrowth.deliveryRate}% vs mes anterior</p>
-                )}
-              </div>
-              <BarChart3 className="w-8 h-8 text-purple-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Programados</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.scheduledMessages}</p>
-              </div>
-              <Clock className="w-8 h-8 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Resumen de Actividad</CardTitle>
-          <CardDescription>
-            Actividad reciente de tus campañas de mensajes
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <div className="flex-1">
-                <p className="font-medium">Campaña "Ofertas de Verano" completada</p>
-                <p className="text-sm text-gray-600">Enviado a 1,205 contactos • Hace 2 horas</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <div className="flex-1">
-                <p className="font-medium">Nueva lista de contactos importada</p>
-                <p className="text-sm text-gray-600">234 nuevos contactos • Hace 4 horas</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-              <div className="flex-1">
-                <p className="font-medium">Campaña "Newsletter Semanal" programada</p>
-                <p className="text-sm text-gray-600">Programado para mañana a las 9:00 AM</p>
-              </div>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function ContactosSection() {
-  const { contacts, loading, error, importContacts } = useContacts()
-  const [importLoading, setImportLoading] = useState(false)
-  const [importResult, setImportResult] = useState(null)
-
-  const handleFileUpload = async (event) => {
-    const file = event.target.files[0]
-    if (!file) return
-
-    setImportLoading(true)
-    setImportResult(null)
-
-    try {
-      const result = await importContacts(file)
-      setImportResult(result)
-    } catch (err) {
-      setImportResult({ 
-        success: false, 
-        message: 'Error al importar contactos' 
-      })
-    } finally {
-      setImportLoading(false)
-    }
-  }
-
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestión de Contactos</h2>
-          <p className="text-gray-600">Administra y organiza tu base de contactos</p>
-        </div>
-        <div className="relative">
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileUpload}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            disabled={importLoading}
-          />
-          <Button 
-            className="bg-blue-600 hover:bg-blue-700"
-            disabled={importLoading}
-          >
-            {importLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Importando...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 mr-2" />
-                Subir CSV/Excel
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-
-      {importResult && (
-        <Alert variant={importResult.success ? "default" : "destructive"}>
-          {importResult.success ? (
-            <CheckCircle className="h-4 w-4" />
-          ) : (
-            <AlertCircle className="h-4 w-4" />
-          )}
-          <AlertDescription>
-            {importResult.success 
-              ? `Importación exitosa: ${importResult.imported} contactos importados, ${importResult.duplicates} duplicados, ${importResult.failed} fallidos.`
-              : importResult.message}
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center h-64">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-600">Cargando contactos...</span>
-        </div>
-      ) : error ? (
-        <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4" />
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : (
-        <Card>
-          <CardHeader>
-            <CardTitle>Lista de Contactos</CardTitle>
-            <CardDescription>Total: {contacts.length} contactos</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-200">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Segmento</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-gray-200">
-                  {contacts
-                    .slice()
-                    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-                    .map((contact) => (
-                      <tr key={contact.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{contact.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{contact.number}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{contact.segment || '-'}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  )
-}
-
-function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages, setSentMessages }) {
-  const { sendMessage, loading, error } = useMessages()
-  const { whatsappStatus, checkWhatsappStatus } = useConfig()
-  const { contacts, loading: contactsLoading, error: contactsError } = useContacts()
-  const [messageContent, setMessageContent] = useState('')
-  const [selectedContacts, setSelectedContacts] = useState([])
-  const [waResult, setWaResult] = useState(null)
-  const [waLoading, setWaLoading] = useState(false)
-  const [schedule, setSchedule] = useState(false)
-  const [scheduledDate, setScheduledDate] = useState('')
-  // Buscador de contactos
-  const [search, setSearch] = useState('')
-
-  useEffect(() => {
-    checkWhatsappStatus()
-  }, [])
-
-  // Efecto robusto para envío programado: un solo intervalo global
-  useEffect(() => {
-    let isProcessing = false;
-    const timer = setInterval(async () => {
-      if (isProcessing) return;
-      isProcessing = true;
-      setScheduledMessages((msgs) => {
-        const now = new Date();
-        // Buscar el primer mensaje pendiente y listo para enviar
-        const idx = msgs.findIndex(
-          (msg) => msg.status === 'Pendiente' && msg.date && !isNaN(new Date(msg.date).getTime()) && new Date(msg.date) <= now
-        );
-        if (idx === -1) return msgs;
-        const msg = msgs[idx];
-        // Marcar como Enviando
-        const updatedMsgs = msgs.map((m, i) =>
-          i === idx ? { ...m, status: 'Enviando' } : m
-        );
-        // Enviar fuera del setState para evitar problemas de concurrencia
-        setTimeout(async () => {
-          for (const to of msg.recipients) {
-            try {
-              await sendWhatsAppMessage({ to, message: msg.content });
-            } catch (err) {
-              console.error('Error enviando mensaje programado:', err);
-            }
-          }
-          setScheduledMessages((prev) =>
-            prev.map((m) =>
-              m.id === msg.id ? { ...m, status: 'Enviado', sentAt: new Date().toISOString() } : m
-            )
-          );
-          setSentMessages((prev) =>
-            prev.some((m) => m.id === msg.id)
-              ? prev
-              : [
-                  ...prev,
-                  {
-                    id: msg.id,
-                    content: msg.content,
-                    recipients: msg.recipients,
-                    date: msg.date,
-                    sentAt: new Date().toISOString(),
-                    status: 'Enviado',
-                  },
-                ]
-          );
-        }, 0);
-        return updatedMsgs;
-      });
-      isProcessing = false;
-    }, 1000);
-    return () => clearInterval(timer);
-  }, [setScheduledMessages, setSentMessages])
-
-  const handleContactCheck = (number) => {
-    setSelectedContacts((prev) =>
-      prev.includes(number)
-        ? prev.filter((n) => n !== number)
-        : [...prev, number]
-    )
-  }
-
-  const handleSendWhatsApp = async (e) => {
-    e.preventDefault();
-    setWaResult(null);
-    setWaLoading(true);
-    try {
-      if (schedule && scheduledDate) {
-        // Guardar mensaje programado en el estado global
-        setScheduledMessages((prev) => [
-          ...prev,
-          {
-            id: Date.now(),
-            content: messageContent,
-            recipients: selectedContacts,
-            date: scheduledDate,
-            status: 'Pendiente',
-          },
-        ])
-        setWaResult({ success: true, message: 'Mensaje programado correctamente.' });
-        setMessageContent('');
-        setSelectedContacts([]);
-        setScheduledDate('');
-        setSchedule(false);
-        setWaLoading(false);
-        return;
-      }
-      // Envío inmediato a todos los seleccionados
-      for (const to of selectedContacts) {
-        await sendWhatsAppMessage({ to, message: messageContent });
-      }
-      // Guardar en historial de enviados
-      setSentMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          content: messageContent,
-          recipients: selectedContacts,
-          date: new Date().toISOString(),
-          status: 'Enviado',
-        },
-      ])
-      setWaResult({ success: true, message: 'Mensaje(s) enviado(s) correctamente.' });
-      setMessageContent('');
-      setSelectedContacts([]);
-    } catch (err) {
-      setWaResult({ success: false, message: err.message });
-    } finally {
-      setWaLoading(false);
-    }
-  };
-
-  // Filtrar contactos por búsqueda
-  const filteredContacts = contacts
-    .slice()
-    .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-    .filter(contact =>
-      contact.name?.toLowerCase().includes(search.toLowerCase()) ||
-      contact.number?.toLowerCase().includes(search.toLowerCase())
-    )
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Crear y Enviar Mensajes</h2>
-      <p className="text-gray-600">Redacta tu mensaje y selecciona los destinatarios.</p>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Contenido del Mensaje</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <form onSubmit={handleSendWhatsApp} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="messageContent">Mensaje</Label>
-              <textarea
-                id="messageContent"
-                rows="6"
-                className="flex w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                placeholder="Escribe tu mensaje aquí..."
-                value={messageContent}
-                onChange={(e) => setMessageContent(e.target.value)}
-                required
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="waTo">Destinatarios</Label>
-              <Input
-                type="text"
-                placeholder="Buscar contacto por nombre o número..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                className="mb-2"
-              />
-              {contactsLoading ? (
-                <div className="text-gray-500">Cargando contactos...</div>
-              ) : contactsError ? (
-                <div className="text-red-500">Error al cargar contactos</div>
-              ) : (
-                <div className="border rounded p-2 max-h-48 overflow-y-auto bg-gray-50">
-                  {filteredContacts.map(contact => (
-                    <label key={contact.id} className="flex items-center space-x-2 py-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedContacts.includes(contact.number)}
-                        onChange={() => handleContactCheck(contact.number)}
-                      />
-                      <span>{contact.name} ({contact.number})</span>
-                    </label>
-                  ))}
-                  {filteredContacts.length === 0 && (
-                    <div className="text-xs text-gray-400 px-2 py-1">No se encontraron contactos.</div>
-                  )}
-                </div>
-              )}
-              <div className="text-xs text-gray-500 mt-1">Seleccionados: {selectedContacts.length}</div>
-            </div>
-            <div className="flex items-center space-x-2">
-              <input
-                type="checkbox"
-                id="schedule"
-                checked={schedule}
-                onChange={e => setSchedule(e.target.checked)}
-              />
-              <Label htmlFor="schedule">Programar mensaje</Label>
-              {schedule && (
-                <input
-                  type="datetime-local"
-                  className="ml-2 border rounded px-2 py-1"
-                  value={scheduledDate}
-                  onChange={e => setScheduledDate(e.target.value)}
-                  required={schedule}
-                />
-              )}
-            </div>
-            <Button type="submit" disabled={waLoading || !messageContent || selectedContacts.length === 0 || (schedule && !scheduledDate)} className="w-full">
-              {waLoading ? (schedule ? 'Programando...' : 'Enviando...') : (schedule ? 'Programar Mensaje' : 'Enviar WhatsApp')}
-            </Button>
-            {waResult && (
-              <div className={waResult.success ? 'text-green-600' : 'text-red-600'}>
-                {waResult.message}
-              </div>
-            )}
-          </form>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function ProgramadosSection({ scheduledMessages }) {
-  // Reloj en tiempo real
-  const [now, setNow] = useState(new Date())
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 1000)
-    return () => clearInterval(timer)
-  }, [])
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Envíos Programados</h2>
-        <div className="text-sm text-gray-600 font-mono bg-gray-100 rounded px-3 py-1">
-          Hora actual: {now.toLocaleString()}
-        </div>
-      </div>
-      <p className="text-gray-600">Gestiona tus mensajes programados para envío futuro.</p>
-      <Card>
-        <CardHeader>
-          <CardTitle>Próximos Envíos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mensaje</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha/Hora</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destinatarios</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {scheduledMessages.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-4 text-gray-400">No hay mensajes programados.</td></tr>
-                ) : scheduledMessages.map((msg) => (
-                  <tr key={msg.id}>
-                    <td className="px-6 py-4 whitespace-pre-wrap text-sm font-medium text-gray-900">{msg.content}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        msg.status === 'Pendiente' ? 'bg-yellow-100 text-yellow-800' :
-                        msg.status === 'Enviado' ? 'bg-green-100 text-green-800' :
-                        'bg-red-100 text-red-800'
-                      }`}>
-                        {msg.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.recipients.length} contacto(s)</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function HistorialSection({ sentMessages }) {
-  const { historyStats, loading, error } = useStats()
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Cargando historial...</span>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    )
-  }
-
-  const stats = historyStats || {
-    totalSent: 15000,
-    delivered: 14500,
-    failed: 500,
-    whatsappSent: 10000,
-    emailSent: 5000,
-    recentSends: [
-      { id: 1, campaign: 'Oferta Black Friday', date: '2024-11-29', channel: 'whatsapp', status: 'delivered', sent: 5000, delivered: 4900, failed: 100, content: '¡Aprovecha nuestras ofertas!' },
-      { id: 2, campaign: 'Lanzamiento Nuevo Producto', date: '2025-01-10', channel: 'whatsapp', status: 'delivered', sent: 3000, delivered: 2950, failed: 50, content: '¡Nuevo producto disponible!' },
-      { id: 3, campaign: 'Encuesta de Satisfacción', date: '2025-02-01', channel: 'whatsapp', status: 'delivered', sent: 2000, delivered: 1980, failed: 20, content: '¿Qué te pareció nuestro servicio?' },
-      { id: 4, campaign: 'Promoción Verano', date: '2025-03-05', channel: 'whatsapp', status: 'failed', sent: 1000, delivered: 800, failed: 200, content: '¡Promoción de verano!' },
-    ]
-  }
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Historial y Estadísticas</h2>
-      <p className="text-gray-600">Revisa el rendimiento de tus campañas de mensajes.</p>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm font-medium text-gray-600">Total Enviados</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.totalSent.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm font-medium text-gray-600">Entregados</p>
-            <p className="text-2xl font-bold text-green-600">{stats.delivered.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-6">
-            <p className="text-sm font-medium text-gray-600">Fallidos</p>
-            <p className="text-2xl font-bold text-red-600">{stats.failed.toLocaleString()}</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Envíos Recientes</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mensaje</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destinatarios</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {sentMessages.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-4 text-gray-400">No hay mensajes enviados.</td></tr>
-                ) : sentMessages.map((msg) => (
-                  <tr key={msg.id}>
-                    <td className="px-6 py-4 whitespace-pre-wrap text-sm text-gray-900">{msg.content}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        msg.status === 'Enviado' ? 'bg-green-100 text-green-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {msg.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.recipients.length} contacto(s)</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function ConfiguracionSection() {
-  const { config, loading, error, updateConfig } = useConfig()
-  const [whatsappToken, setWhatsappToken] = useState(config?.whatsappToken || '')
-  const [whatsappPhoneId, setWhatsappPhoneId] = useState(config?.whatsappPhoneId || '')
-  const [smtpHost, setSmtpHost] = useState(config?.smtpHost || '')
-  const [smtpPort, setSmtpPort] = useState(config?.smtpPort || '')
-  const [smtpUser, setSmtpUser] = useState(config?.smtpUser || '')
-  const [smtpPass, setSmtpPass] = useState(config?.smtpPass || '')
-  const [saveLoading, setSaveLoading] = useState(false)
-  const [saveResult, setSaveResult] = useState(null)
-
-  useEffect(() => {
-    if (config) {
-      setWhatsappToken(config.whatsappToken || '')
-      setWhatsappPhoneId(config.whatsappPhoneId || '')
-      setSmtpHost(config.smtpHost || '')
-      setSmtpPort(config.smtpPort || '')
-      setSmtpUser(config.smtpUser || '')
-      setSmtpPass(config.smtpPass || '')
-    }
-  }, [config])
-
-  const handleSaveConfig = async (e) => {
-    e.preventDefault()
-    setSaveLoading(true)
-    setSaveResult(null)
-
-    try {
-      const result = await updateConfig({
-        whatsappToken,
-        whatsappPhoneId,
-        smtpHost,
-        smtpPort,
-        smtpUser,
-        smtpPass
-      })
-      setSaveResult(result)
-    } catch (err) {
-      setSaveResult({ success: false, message: err.message || 'Error al guardar configuración.' })
-    } finally {
-      setSaveLoading(false)
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Cargando configuración...</span>
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="h-4 w-4" />
-        <AlertDescription>{error}</AlertDescription>
-      </Alert>
-    )
-  }
-
-  return (
-    <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Configuración</h2>
-      <p className="text-gray-600">Configura tus integraciones y preferencias de cuenta.</p>
-
-      <form onSubmit={handleSaveConfig} className="space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Integración WhatsApp Business API</CardTitle>
-            <CardDescription>Configura tus credenciales para enviar mensajes por WhatsApp.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="whatsappToken">Token de Acceso</Label>
-              <Input
-                id="whatsappToken"
-                type="password"
-                placeholder="Ingresa tu token de acceso de WhatsApp"
-                value={whatsappToken}
-                onChange={(e) => setWhatsappToken(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="whatsappPhoneId">ID de Número de Teléfono</Label>
-              <Input
-                id="whatsappPhoneId"
-                type="text"
-                placeholder="Ingresa el ID de tu número de teléfono de WhatsApp"
-                value={whatsappPhoneId}
-                onChange={(e) => setWhatsappPhoneId(e.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Configuración de Email (SMTP)</CardTitle>
-            <CardDescription>Configura tus credenciales SMTP para enviar correos electrónicos.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="smtpHost">Servidor SMTP</Label>
-              <Input
-                id="smtpHost"
-                type="text"
-                placeholder="ej: smtp.gmail.com"
-                value={smtpHost}
-                onChange={(e) => setSmtpHost(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtpPort">Puerto SMTP</Label>
-              <Input
-                id="smtpPort"
-                type="number"
-                placeholder="ej: 587"
-                value={smtpPort}
-                onChange={(e) => setSmtpPort(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtpUser">Usuario SMTP</Label>
-              <Input
-                id="smtpUser"
-                type="text"
-                placeholder="ej: tu_email@ejemplo.com"
-                value={smtpUser}
-                onChange={(e) => setSmtpUser(e.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="smtpPass">Contraseña SMTP</Label>
-              <Input
-                id="smtpPass"
-                type="password"
-                placeholder="Ingresa tu contraseña SMTP"
-                value={smtpPass}
-                onChange={(e) => setSmtpPass(e.target.value)}
-              />
-            </div>
-          </CardContent>
-        </Card>
-
-        {saveResult && (
-          <Alert variant={saveResult.success ? "default" : "destructive"}>
-            {saveResult.success ? (
-              <CheckCircle className="h-4 w-4" />
-            ) : (
-              <AlertCircle className="h-4 w-4" />
-            )}
-            <AlertDescription>
-              {saveResult.success 
-                ? 'Configuración guardada exitosamente.'
-                : saveResult.message}
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <Button 
-          type="submit" 
-          className="w-full h-11 bg-blue-600 hover:bg-blue-700"
-          disabled={saveLoading}
-        >
-          {saveLoading ? (
-            <>
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-              Guardando...
-            </>
-          ) : (
-            'Guardar Configuración'
-          )}
-        </Button>
-      </form>
     </div>
   )
 }
 
 export default App
-
-
