@@ -9,13 +9,19 @@ app.use(cors());
 app.use(express.json());
 
 // Inicializar cliente WhatsApp
+const puppeteerConfig = {
+    headless: true,
+    args: ['--no-sandbox']
+};
+
+// Permite especificar un Chrome alternativo si CHROME_PATH está definido
+if (process.env.CHROME_PATH) {
+    puppeteerConfig.executablePath = process.env.CHROME_PATH;
+}
+
 const client = new Client({
     authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: ['--no-sandbox'],
-        executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe' // Cambia la ruta si tu Chrome está en otro lugar
-    }
+    puppeteer: puppeteerConfig
 });
 
 let qrCodeString = null;
