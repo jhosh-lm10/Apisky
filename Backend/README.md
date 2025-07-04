@@ -1,37 +1,28 @@
-# Apisky Backend
+# CRM Backend
 
-Este backend está construido con Node.js y Express. Provee endpoints para:
-- Obtener el QR de WhatsApp Web y verificar el estado de la sesión
-- Enviar mensajes y listar contactos de WhatsApp
+Servidor básico construido con Node.js y Express para gestionar la información del pipeline de ventas. Toda la información se almacena en `data.json` a modo de ejemplo.
 
 ## Instalación
 
-1. Instala las dependencias:
-   ```sh
-   npm install
-   ```
-2. Crea un archivo `.env` con tus credenciales (ver ejemplo más abajo).
-3. Inicia el servidor:
-   ```sh
-   node index.js
-   ```
-
-## Endpoints principales
-- `GET /api/wa-qr` — Obtener el código QR para iniciar sesión
-- `GET /api/wa-status` — Verificar si el cliente está listo
-- `POST /api/send-wa` — Enviar mensaje de WhatsApp
-- `GET /api/wa-contacts` — Obtener contactos de WhatsApp
-
-## Ejemplo de archivo `.env`
-```
-# Puerto opcional para el servidor
-PORT=3001
-# Ruta al ejecutable de Chrome
-# (por defecto se usa C:/Program Files/Google/Chrome/Application/chrome.exe)
-CHROME_PATH=C:/Program Files/Google/Chrome/Application/chrome.exe
+```bash
+npm install
 ```
 
-## Notas
-- Personaliza los endpoints según tus necesidades.
-- Este backend es solo un punto de partida.
-- Si el cliente de WhatsApp no inicia, revisa la ruta definida en `CHROME_PATH`.
+## Ejecución
+
+```bash
+node index.js
+```
+
+## Endpoints
+
+- `GET /api/stages` – Lista las etapas ordenadas
+- `POST /api/stages` – Crea una nueva etapa
+- `PUT /api/stages/:id` – Actualiza una etapa
+- `DELETE /api/stages/:id` – Elimina una etapa
+- `GET /api/pipeline-contacts` – Obtiene los contactos
+- `POST /api/pipeline-contacts` – Crea un contacto
+- `PUT /api/pipeline-contacts/:id` – Actualiza un contacto
+- `DELETE /api/pipeline-contacts/:id` – Elimina un contacto
+- `GET /api/messages/:contactId` – Lista los mensajes de un contacto
+- `POST /api/messages` – Envía un mensaje

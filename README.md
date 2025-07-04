@@ -1,10 +1,10 @@
-# Apisky
+# CRM Visual
 
-Este proyecto es un ejemplo sencillo para gestionar envíos de mensajes promocionales a través de WhatsApp. Incluye un backend con Node.js y Express y un frontend construido con React y Vite.
+Proyecto base para un CRM sencillo con pipeline tipo kanban y panel de chat integrado.
 
-## Requisitos previos
+## Requisitos
 
-- Node.js y npm instalados en tu sistema.
+- Node.js y npm instalados.
 
 ## Puesta en marcha
 
@@ -12,18 +12,19 @@ Este proyecto es un ejemplo sencillo para gestionar envíos de mensajes promocio
 
 ```bash
 cd Backend
-npm install && npm start
+npm install
+node index.js
 ```
 
 ### Frontend
 
 ```bash
 cd frontend
-npm install && npm run dev
+npm install
+npm run dev
 ```
 
-## Estructura de carpetas
+## Estructura
 
-- **Backend**: servidor Express que expone los endpoints necesarios para conectarse a WhatsApp y manejar la configuración.
-- **frontend**: aplicación React creada con Vite y TailwindCSS para la gestión de contactos y envío de mensajes.
-
+- **Backend**: servidor Express con endpoints para pipeline, contactos y mensajes.
+- **frontend**: aplicación React + Vite que muestra el tablero del pipeline y un chat lateral.

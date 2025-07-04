@@ -10,7 +10,7 @@ describe('useMessages hook', () => {
 
     let response;
     await act(async () => {
-      response = await result.current.sendMessage({ content: 'Hi', channel: 'wa', recipients: ['1'] });
+      response = await result.current.sendMessage({ contactId: 1, content: 'Hi' });
     });
 
     expect(spy).toHaveBeenCalled();
