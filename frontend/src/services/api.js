@@ -52,6 +52,59 @@ const messagesService = {
   },
 };
 
+// Pipeline services
+const pipelineService = {
+  getStages: async () => {
+    const res = await fetch('http://localhost:3001/api/stages');
+    if (!res.ok) throw new Error('Error cargando etapas');
+    return await res.json();
+  },
+  createStage: async (name) => {
+    const res = await fetch('http://localhost:3001/api/stages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    });
+    return await res.json();
+  },
+  updateStage: async (id, payload) => {
+    const res = await fetch(`http://localhost:3001/api/stages/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  },
+  deleteStage: async (id) => {
+    const res = await fetch(`http://localhost:3001/api/stages/${id}`, { method: 'DELETE' });
+    return await res.json();
+  },
+  getContacts: async () => {
+    const res = await fetch('http://localhost:3001/api/pipeline-contacts');
+    return await res.json();
+  },
+  updateContact: async (id, payload) => {
+    const res = await fetch(`http://localhost:3001/api/pipeline-contacts/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  },
+  getMessages: async (contactId) => {
+    const res = await fetch(`http://localhost:3001/api/messages/${contactId}`);
+    return await res.json();
+  },
+  sendMessage: async (contactId, content) => {
+    const res = await fetch('http://localhost:3001/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contactId, content }),
+    });
+    return await res.json();
+  },
+};
+
 // Servicio de estadísticas simulado
 const statsService = {
   getDashboardStats: async () => {
@@ -144,6 +197,6 @@ export async function sendWhatsAppMessage({ to, message }) {
   return data;
 }
 
-export { authService, contactsService, messagesService, statsService, configService };
+export { authService, contactsService, messagesService, statsService, configService, pipelineService };
 
 

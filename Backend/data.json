@@ -1,0 +1,14 @@
+{
+  "stages": [
+    {"id": 1, "name": "Incoming leads", "position": 1},
+    {"id": 2, "name": "First Contact", "position": 2}
+  ],
+  "contacts": [
+    {"id": 1, "name": "Juan Pérez", "project": "Proyecto X", "amount": 5000, "stageId": 1},
+    {"id": 2, "name": "María López", "project": "Proyecto Y", "amount": 3000, "stageId": 2}
+  ],
+  "messages": [
+    {"id": 1, "contactId": 1, "direction": "in", "content": "Hola", "timestamp": "2024-01-01T12:00:00Z"},
+    {"id": 2, "contactId": 1, "direction": "out", "content": "¿Cómo estás?", "timestamp": "2024-01-01T12:05:00Z"}
+  ]
+}
