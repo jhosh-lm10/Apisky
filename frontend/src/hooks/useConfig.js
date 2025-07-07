@@ -47,6 +47,13 @@ export function useConfig() {
     }
   };
 
+  // Verificar estado de WhatsApp al montar y luego cada 5 segundos
+  useEffect(() => {
+    checkWhatsappStatus();
+    const interval = setInterval(checkWhatsappStatus, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   return { config, loading, error, updateConfig, whatsappStatus, checkWhatsappStatus };
 }
 

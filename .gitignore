@@ -134,3 +134,7 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# WhatsApp Web session files
+Backend/.wwebjs_auth/
+Backend/.wwebjs_cache/

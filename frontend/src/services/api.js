@@ -13,11 +13,38 @@ const authService = {
     });
   },
   logout: async () => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve({ success: true, message: 'Sesión cerrada' });
-      }, 500);
-    });
+    try {
+      // 1. Cerrar sesión en el backend de WhatsApp
+      const waLogoutRes = await fetch('http://localhost:3001/api/wa-logout', {
+        method: 'POST'
+      });
+      
+      if (!waLogoutRes.ok) {
+        const error = await waLogoutRes.json();
+        throw new Error(error.message || 'Error al cerrar sesión de WhatsApp');
+      }
+      
+      // 2. Limpiar datos locales
+      return { success: true, message: 'Sesión cerrada correctamente' };
+    } catch (error) {
+      console.error('Error en logout:', error);
+      // Si falla el cierre de sesión de WhatsApp, intentar forzar reinicio
+      try {
+        const forceReset = await fetch('http://localhost:3001/api/forzar-reinicio', {
+          method: 'POST'
+        });
+        
+        if (!forceReset.ok) throw error; // Si también falla, lanzar error original
+        
+        return { 
+          success: true, 
+          message: 'Se reinició la sesión de WhatsApp. Escanea el nuevo QR cuando aparezca.' 
+        };
+      } catch (e) {
+        console.error('Error en forzar reinicio:', e);
+        throw error; // Lanzar el error original
+      }
+    }
   },
 };
 
@@ -117,11 +144,16 @@ const configService = {
     });
   },
   checkWhatsappStatus: async () => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        resolve({ connected: true, phoneNumber: '+1234567890' });
-      }, 500);
-    });
+    try {
+      const res = await fetch('http://localhost:3001/api/wa-status');
+      if (!res.ok) throw new Error('No se pudo verificar estado de WhatsApp');
+      const data = await res.json();
+      // El backend devuelve { ready: true/false }
+      return { connected: !!data.ready };
+    } catch (err) {
+      console.error('Error verificando estado de WhatsApp:', err);
+      return { connected: false };
+    }
   },
   checkEmailStatus: async () => {
     return new Promise(resolve => {
@@ -133,15 +165,46 @@ const configService = {
 };
 
 // Servicio real para enviar WhatsApp usando el backend
-export async function sendWhatsAppMessage({ to, message }) {
-  const res = await fetch('http://localhost:3001/api/send-wa', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ to, message }),
-  });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.message || 'Error enviando mensaje');
-  return data;
+export async function sendWhatsAppMessage({ to, message, imageFile, caption = '' }) {
+  const formData = new FormData();
+  formData.append('to', to);
+  
+  if (imageFile) {
+    // Solo adjuntar la imagen si existe
+    formData.append('image', imageFile);
+    // Usar el mensaje como pie de foto si está presente
+    if (message) {
+      formData.append('caption', message);
+    } else if (caption) {
+      formData.append('caption', caption);
+    }
+    
+    // Enviar solo a la ruta de imágenes
+    const res = await fetch('http://localhost:3001/api/send-wa-image', {
+      method: 'POST',
+      body: formData,
+      // No establecer Content-Type manualmente, el navegador lo hará con el boundary correcto
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error enviando imagen');
+    return data;
+  } else {
+    // Envío de mensaje de texto normal
+    formData.append('message', message);
+    
+    const res = await fetch('http://localhost:3001/api/send-wa', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ to, message }),
+    });
+    
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error enviando mensaje');
+    return data;
+  }
 }
 
 export { authService, contactsService, messagesService, statsService, configService };

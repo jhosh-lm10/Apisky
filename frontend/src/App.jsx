@@ -5,12 +5,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label.jsx'
 import { Alert, AlertDescription } from '@/components/ui/alert.jsx'
 import { 
-  Home, 
   Users, 
   MessageSquare, 
   Clock, 
-  BarChart3, 
-  Settings,
+  BarChart3,
   Send,
   Upload,
   Mail,
@@ -27,10 +25,11 @@ import { useMessages, useWhatsApp } from './hooks/useMessages'
 import { useStats } from './hooks/useStats'
 import { useConfig } from './hooks/useConfig'
 import { authService, sendWhatsAppMessage } from './services/api'
+import WaQr from './components/ui/waqr'
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
-  const [currentSection, setCurrentSection] = useState('inicio')
+  const [currentSection, setCurrentSection] = useState('mensajes')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [loginData, setLoginData] = useState({ username: '', password: '' })
   const [loginLoading, setLoginLoading] = useState(false)
@@ -39,6 +38,8 @@ function App() {
   // Estado global para mensajes programados y enviados
   const [scheduledMessages, setScheduledMessages] = useState([])
   const [sentMessages, setSentMessages] = useState([])
+
+  const { whatsappStatus } = useConfig();
 
   const handleLogin = async (e) => {
     e.preventDefault()
@@ -54,7 +55,7 @@ function App() {
       const response = await authService.login(loginData)
       if (response.success) {
         setIsLoggedIn(true)
-        setCurrentSection('inicio')
+        setCurrentSection('mensajes')
         setLoginError('')
       }
     } catch (error) {
@@ -64,25 +65,41 @@ function App() {
     }
   }
 
+  const [logoutError, setLogoutError] = useState(null);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
   const handleLogout = async () => {
+    if (isLoggingOut) return;
+    
+    setIsLoggingOut(true);
+    setLogoutError(null);
+    
     try {
-      await authService.logout()
-      setIsLoggedIn(false)
-      setLoginData({ username: '', password: '' })
-      setCurrentSection('inicio')
-      setIsMobileMenuOpen(false)
+      const result = await authService.logout();
+      console.log(result.message);
+      
+      // Mostrar mensaje de éxito
+      alert(result.message);
+      
+      // Limpiar estado
+      setIsLoggedIn(false);
+      setLoginData({ username: '', password: '' });
+      setCurrentSection('mensajes');
+      setIsMobileMenuOpen(false);
     } catch (error) {
-      console.error('Error al cerrar sesión:', error)
+      console.error('Error al cerrar sesión:', error);
+      setLogoutError(error.message || 'Error al cerrar sesión');
+      alert(`Error: ${error.message}`);
+    } finally {
+      setIsLoggingOut(false);
     }
   }
 
   const menuItems = [
-    { id: 'inicio', label: 'Inicio', icon: Home },
     { id: 'contactos', label: 'Contactos', icon: Users },
     { id: 'mensajes', label: 'Mensajes', icon: MessageSquare },
     { id: 'programados', label: 'Envíos programados', icon: Clock },
     { id: 'historial', label: 'Historial y estadísticas', icon: BarChart3 },
-    { id: 'configuracion', label: 'Configuración', icon: Settings },
   ]
 
   if (!isLoggedIn) {
@@ -241,7 +258,7 @@ function App() {
 
         {/* Content */}
         <main className="p-6">
-          {currentSection === 'inicio' && <InicioSection />}
+
           {currentSection === 'contactos' && <ContactosSection />}
           {currentSection === 'mensajes' && (
             <MensajesSection
@@ -257,9 +274,10 @@ function App() {
           {currentSection === 'historial' && (
             <HistorialSection sentMessages={sentMessages} />
           )}
-          {currentSection === 'configuracion' && <ConfiguracionSection />}
+
         </main>
       </div>
+      {/* El componente WaQr ahora se maneja dentro de MensajesSection */}
     </div>
   )
 }
@@ -272,7 +290,7 @@ function InicioSection() {
     return (
       <div className="flex items-center justify-center h-64">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-        <span className="ml-2 text-gray-600">Cargando estadísticas...</span>
+        <span className="ml-2 text-gray-600">Cargando información...</span>
       </div>
     )
   }
@@ -286,104 +304,26 @@ function InicioSection() {
     )
   }
 
-  const stats = dashboardStats || {
-    totalContacts: 1234,
-    messagesSent: 5678,
-    deliveryRate: 94.2,
-    scheduledMessages: 23
-  }
-
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Total Contactos</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalContacts.toLocaleString()}</p>
-                {stats.monthlyGrowth?.contacts && (
-                  <p className="text-xs text-green-600">+{stats.monthlyGrowth.contacts}% vs mes anterior</p>
-                )}
-              </div>
-              <Users className="w-8 h-8 text-blue-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Mensajes Enviados</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.messagesSent.toLocaleString()}</p>
-                {stats.monthlyGrowth?.messages && (
-                  <p className="text-xs text-green-600">+{stats.monthlyGrowth.messages}% vs mes anterior</p>
-                )}
-              </div>
-              <Send className="w-8 h-8 text-green-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Tasa de Entrega</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.deliveryRate}%</p>
-                {stats.monthlyGrowth?.deliveryRate && (
-                  <p className="text-xs text-green-600">+{stats.monthlyGrowth.deliveryRate}% vs mes anterior</p>
-                )}
-              </div>
-              <BarChart3 className="w-8 h-8 text-purple-600" />
-            </div>
-          </CardContent>
-        </Card>
-        
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-sm font-medium text-gray-600">Programados</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.scheduledMessages}</p>
-              </div>
-              <Clock className="w-8 h-8 text-orange-600" />
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
       <Card>
         <CardHeader>
-          <CardTitle>Resumen de Actividad</CardTitle>
+          <CardTitle>Bienvenido a Apisky</CardTitle>
           <CardDescription>
-            Actividad reciente de tus campañas de mensajes
+            Tu plataforma para la gestión de mensajes promocionales
           </CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-4">
-            <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-              <div className="flex-1">
-                <p className="font-medium">Campaña "Ofertas de Verano" completada</p>
-                <p className="text-sm text-gray-600">Enviado a 1,205 contactos • Hace 2 horas</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-              <div className="flex-1">
-                <p className="font-medium">Nueva lista de contactos importada</p>
-                <p className="text-sm text-gray-600">234 nuevos contactos • Hace 4 horas</p>
-              </div>
-            </div>
-            <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
-              <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
-              <div className="flex-1">
-                <p className="font-medium">Campaña "Newsletter Semanal" programada</p>
-                <p className="text-sm text-gray-600">Programado para mañana a las 9:00 AM</p>
-              </div>
-            </div>
+            <p className="text-gray-700">
+              Comienza a utilizar la plataforma seleccionando una opción del menú lateral.
+            </p>
+            <ul className="list-disc pl-5 space-y-2 text-gray-600">
+              <li>Gestiona tus contactos en la sección <strong>Contactos</strong></li>
+              <li>Envía mensajes masivos en <strong>Mensajes</strong></li>
+              <li>Revisa tu historial en <strong>Historial y estadísticas</strong></li>
+              <li>Configura tu cuenta en <strong>Configuración</strong></li>
+            </ul>
           </div>
         </CardContent>
       </Card>
@@ -522,12 +462,10 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
   const [waLoading, setWaLoading] = useState(false)
   const [schedule, setSchedule] = useState(false)
   const [scheduledDate, setScheduledDate] = useState('')
+  const [imagePreview, setImagePreview] = useState(null)
+  const [imageFile, setImageFile] = useState(null)
   // Buscador de contactos
   const [search, setSearch] = useState('')
-
-  useEffect(() => {
-    checkWhatsappStatus()
-  }, [])
 
   // Efecto robusto para envío programado: un solo intervalo global
   useEffect(() => {
@@ -592,9 +530,42 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
     )
   }
 
+  const handleImageChange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    // Validar tamaño (máx 10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setWaResult({ success: false, message: 'La imagen no debe superar los 10MB' });
+      return;
+    }
+
+    // Crear vista previa
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      setImagePreview(reader.result);
+    };
+    reader.readAsDataURL(file);
+    setImageFile(file);
+  };
+
+  const removeImage = () => {
+    setImagePreview(null);
+    setImageFile(null);
+    // Limpiar el input file
+    const fileInput = document.getElementById('image-upload');
+    if (fileInput) fileInput.value = '';
+  };
+
   const handleSendWhatsApp = async (e) => {
     e.preventDefault();
     setWaResult(null);
+    
+    if (!messageContent.trim() && !imageFile) {
+      setWaResult({ success: false, message: 'Por favor ingresa un mensaje o adjunta una imagen' });
+      return;
+    }
+
     setWaLoading(true);
     try {
       if (schedule && scheduledDate) {
@@ -604,43 +575,70 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
           {
             id: Date.now(),
             content: messageContent,
+            imageUrl: imagePreview,
             recipients: selectedContacts,
             date: scheduledDate,
             status: 'Pendiente',
           },
-        ])
+        ]);
         setWaResult({ success: true, message: 'Mensaje programado correctamente.' });
-        setMessageContent('');
-        setSelectedContacts([]);
-        setScheduledDate('');
-        setSchedule(false);
-        setWaLoading(false);
-        return;
+      } else {
+        // Envío inmediato a todos los seleccionados
+        for (const to of selectedContacts) {
+          await sendWhatsAppMessage({ 
+            to, 
+            message: messageContent,
+            imageFile: imageFile,
+            caption: messageContent
+          });
+        }
+        
+        // Guardar en historial de enviados
+        setSentMessages((prev) => [
+          ...prev,
+          {
+            id: Date.now(),
+            content: messageContent,
+            imageUrl: imagePreview,
+            recipients: selectedContacts,
+            date: new Date().toISOString(),
+            status: 'Enviado',
+          },
+        ]);
+        
+        setWaResult({ success: true, message: 'Mensaje(s) enviado(s) correctamente.' });
       }
-      // Envío inmediato a todos los seleccionados
-      for (const to of selectedContacts) {
-        await sendWhatsAppMessage({ to, message: messageContent });
-      }
-      // Guardar en historial de enviados
-      setSentMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now(),
-          content: messageContent,
-          recipients: selectedContacts,
-          date: new Date().toISOString(),
-          status: 'Enviado',
-        },
-      ])
-      setWaResult({ success: true, message: 'Mensaje(s) enviado(s) correctamente.' });
+      
+      // Limpiar formulario
       setMessageContent('');
       setSelectedContacts([]);
+      setScheduledDate('');
+      setSchedule(false);
+      setImagePreview(null);
+      setImageFile(null);
+      const fileInput = document.getElementById('image-upload');
+      if (fileInput) fileInput.value = '';
+      
     } catch (err) {
       setWaResult({ success: false, message: err.message });
     } finally {
       setWaLoading(false);
     }
   };
+
+  // Si WhatsApp aún no está conectado, mostrar el QR y salir temprano
+  if (!whatsappStatus.connected) {
+    return (
+      <div className="space-y-6">
+        <h2 className="text-2xl font-bold text-gray-900">Conectar WhatsApp</h2>
+        <p className="text-gray-600">Escanea el QR para conectar tu sesión y comenzar a enviar mensajes.</p>
+        <WaQr />
+        <div className="flex justify-center">
+          <Button onClick={checkWhatsappStatus} className="mt-4">Ya escaneé el QR</Button>
+        </div>
+      </div>
+    )
+  }
 
   // Filtrar contactos por búsqueda
   const filteredContacts = contacts
@@ -662,6 +660,41 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
         </CardHeader>
         <CardContent className="space-y-4">
           <form onSubmit={handleSendWhatsApp} className="space-y-4">
+            {/* Vista previa de la imagen */}
+            {imagePreview && (
+              <div className="relative border rounded-lg p-2">
+                <img 
+                  src={imagePreview} 
+                  alt="Vista previa" 
+                  className="max-h-40 mx-auto rounded"
+                />
+                <button
+                  type="button"
+                  onClick={removeImage}
+                  className="absolute top-1 right-1 bg-red-500 text-white rounded-full w-6 h-6 flex items-center justify-center hover:bg-red-600"
+                  title="Eliminar imagen"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            
+            {/* Botón para subir imagen */}
+            <div className="flex items-center space-x-4">
+              <label className="cursor-pointer bg-blue-50 hover:bg-blue-100 text-blue-600 px-4 py-2 rounded-md text-sm font-medium transition-colors">
+                📷 Adjuntar Imagen
+                <input
+                  id="image-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleImageChange}
+                />
+              </label>
+              <span className="text-xs text-gray-500">
+                Formatos: JPG, PNG, WebP (máx. 10MB)
+              </span>
+            </div>
             <div className="space-y-2">
               <Label htmlFor="messageContent">Mensaje</Label>
               <textarea
@@ -820,82 +853,110 @@ function HistorialSection({ sentMessages }) {
     )
   }
 
-  const stats = historyStats || {
-    totalSent: 15000,
-    delivered: 14500,
-    failed: 500,
-    whatsappSent: 10000,
-    emailSent: 5000,
-    recentSends: [
-      { id: 1, campaign: 'Oferta Black Friday', date: '2024-11-29', channel: 'whatsapp', status: 'delivered', sent: 5000, delivered: 4900, failed: 100, content: '¡Aprovecha nuestras ofertas!' },
-      { id: 2, campaign: 'Lanzamiento Nuevo Producto', date: '2025-01-10', channel: 'whatsapp', status: 'delivered', sent: 3000, delivered: 2950, failed: 50, content: '¡Nuevo producto disponible!' },
-      { id: 3, campaign: 'Encuesta de Satisfacción', date: '2025-02-01', channel: 'whatsapp', status: 'delivered', sent: 2000, delivered: 1980, failed: 20, content: '¿Qué te pareció nuestro servicio?' },
-      { id: 4, campaign: 'Promoción Verano', date: '2025-03-05', channel: 'whatsapp', status: 'failed', sent: 1000, delivered: 800, failed: 200, content: '¡Promoción de verano!' },
-    ]
-  }
+  const totalSent = sentMessages.length;
+  const delivered = sentMessages.filter(msg => msg.status === 'Enviado').length;
+  const failed = totalSent - delivered;
 
   return (
     <div className="space-y-6">
-      <h2 className="text-2xl font-bold text-gray-900">Historial y Estadísticas</h2>
-      <p className="text-gray-600">Revisa el rendimiento de tus campañas de mensajes.</p>
+      <h2 className="text-2xl font-bold text-gray-900">Historial de Mensajes</h2>
+      <p className="text-gray-600">Revisa el historial de tus mensajes enviados.</p>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card>
           <CardContent className="p-6">
-            <p className="text-sm font-medium text-gray-600">Total Enviados</p>
-            <p className="text-2xl font-bold text-gray-900">{stats.totalSent.toLocaleString()}</p>
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-600">Total Enviados</p>
+              <p className="text-3xl font-bold text-gray-900">{totalSent}</p>
+            </div>
           </CardContent>
         </Card>
+
         <Card>
           <CardContent className="p-6">
-            <p className="text-sm font-medium text-gray-600">Entregados</p>
-            <p className="text-2xl font-bold text-green-600">{stats.delivered.toLocaleString()}</p>
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-600">Entregados</p>
+              <p className="text-3xl font-bold text-green-600">{delivered}</p>
+              {totalSent > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {((delivered / totalSent) * 100).toFixed(1)}% de tasa de entrega
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
+
         <Card>
           <CardContent className="p-6">
-            <p className="text-sm font-medium text-gray-600">Fallidos</p>
-            <p className="text-2xl font-bold text-red-600">{stats.failed.toLocaleString()}</p>
+            <div className="text-center">
+              <p className="text-sm font-medium text-gray-600">Fallidos</p>
+              <p className="text-3xl font-bold text-red-600">{failed}</p>
+              {totalSent > 0 && (
+                <p className="text-xs text-gray-500 mt-1">
+                  {((failed / totalSent) * 100).toFixed(1)}% de tasa de fallo
+                </p>
+              )}
+            </div>
           </CardContent>
         </Card>
       </div>
 
       <Card>
         <CardHeader>
-          <CardTitle>Envíos Recientes</CardTitle>
+          <CardTitle>Mensajes Enviados</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Mensaje</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Estado</th>
-                  <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Destinatarios</th>
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {sentMessages.length === 0 ? (
-                  <tr><td colSpan={4} className="text-center py-4 text-gray-400">No hay mensajes enviados.</td></tr>
-                ) : sentMessages.map((msg) => (
-                  <tr key={msg.id}>
-                    <td className="px-6 py-4 whitespace-pre-wrap text-sm text-gray-900">{msg.content}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.date}</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                      <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                        msg.status === 'Enviado' ? 'bg-green-100 text-green-800' :
-                        'bg-yellow-100 text-yellow-800'
-                      }`}>
-                        {msg.status}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{msg.recipients.length} contacto(s)</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          {sentMessages.length === 0 ? (
+            <div className="text-center py-8 text-gray-500">
+              <Mail className="mx-auto h-12 w-12 text-gray-400" />
+              <p className="mt-2 text-sm font-medium text-gray-900">No hay mensajes enviados</p>
+              <p className="mt-1 text-sm text-gray-500">Los mensajes que envíes aparecerán aquí.</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {sentMessages.map((msg) => (
+                <div key={msg.id} className="border rounded-lg p-4">
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <p className="font-medium">
+                        {msg.recipients.length} destinatario(s)
+                      </p>
+                      <p className="text-sm text-gray-500">
+                        {new Date(msg.date).toLocaleString()}
+                      </p>
+                    </div>
+                    <span className={`px-2 py-1 text-xs font-medium rounded ${
+                      msg.status === 'Enviado' 
+                        ? 'bg-green-100 text-green-800' 
+                        : 'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {msg.status}
+                    </span>
+                  </div>
+                  
+                  {msg.imageUrl && (
+                    <div className="mt-3 mb-2">
+                      <img 
+                        src={msg.imageUrl} 
+                        alt="Imagen enviada" 
+                        className="max-h-40 rounded border"
+                      />
+                    </div>
+                  )}
+                  
+                  {msg.content && (
+                    <div className="mt-2 p-3 bg-gray-50 rounded">
+                      <p className="whitespace-pre-wrap text-gray-800">{msg.content}</p>
+                    </div>
+                  )}
+                  
+                  <div className="mt-2 text-xs text-gray-500">
+                    {msg.recipients.join(', ')}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
@@ -912,6 +973,23 @@ function ConfiguracionSection() {
   const [smtpPass, setSmtpPass] = useState(config?.smtpPass || '')
   const [saveLoading, setSaveLoading] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
+
+  // Cerrar sesión de WhatsApp
+  const handleWaLogout = async () => {
+    if (!window.confirm('¿Estás seguro de que deseas cerrar la sesión de WhatsApp?')) return;
+    try {
+      const res = await fetch('http://localhost:3001/api/wa-logout', { method: 'POST' });
+      const data = await res.json();
+      if (data.success) {
+        alert('Sesión de WhatsApp cerrada. Se generará un nuevo QR al reiniciar.');
+      } else {
+        alert('No se pudo cerrar la sesión de WhatsApp.');
+      }
+    } catch (err) {
+      console.error('Error cerrando sesión WhatsApp:', err);
+      alert('Error cerrando sesión WhatsApp.');
+    }
+  }
 
   useEffect(() => {
     if (config) {
@@ -967,6 +1045,11 @@ function ConfiguracionSection() {
   return (
     <div className="space-y-6">
       <h2 className="text-2xl font-bold text-gray-900">Configuración</h2>
+      <div className="mt-2">
+        <Button variant="destructive" size="sm" onClick={handleWaLogout} className="flex items-center space-x-2">
+          <LogOut className="w-4 h-4 mr-2" /> Cerrar sesión de WhatsApp
+        </Button>
+      </div>
       <p className="text-gray-600">Configura tus integraciones y preferencias de cuenta.</p>
 
       <form onSubmit={handleSaveConfig} className="space-y-6">

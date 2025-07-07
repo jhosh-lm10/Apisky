@@ -6,19 +6,27 @@ export function useContacts() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  // Función para obtener contactos
+  const fetchContacts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await contactsService.getContacts();
+      setContacts(data);
+    } catch (err) {
+      setError('Error al cargar contactos');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    const fetchContacts = async () => {
-      try {
-        const data = await contactsService.getContacts();
-        setContacts(data);
-      } catch (err) {
-        setError('Error al cargar contactos');
-      } finally {
-        setLoading(false);
-      }
-    };
+
     fetchContacts();
   }, []);
+
+  // Exponer función para refrescar manualmente
+  const refreshContacts = fetchContacts;
 
   const importContacts = async (file) => {
     setLoading(true);
@@ -37,7 +45,7 @@ export function useContacts() {
     }
   };
 
-  return { contacts, loading, error, importContacts };
+  return { contacts, loading, error, importContacts, refreshContacts };
 }
 
 
