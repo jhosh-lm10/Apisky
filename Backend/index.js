@@ -324,23 +324,143 @@ app.get('/api/wa-contacts', async (req, res) => {
       return res.status(503).json({ error: 'WhatsApp no está listo aún' });
     }
 
-    const contacts = await client.getContacts();
+    // Obtener solo los contactos guardados en la agenda
+    const contacts = (await client.getContacts())
+      .filter(c => c.isMyContact && c.name && !c.isGroup);
+    
+    console.log(`=== SE ENCONTRARON ${contacts.length} CONTACTOS EN LA AGENDA ===`);
+    
+    // Mostrar información de muestra de los contactos
+    console.log('=== MUESTRA DE CONTACTOS (primeros 5) ===');
+    contacts.slice(0, 5).forEach((c, i) => {
+      console.log(`${i + 1}. ${c.name}: ${c.id?.user}`);
+    });
+    console.log('======================================\n');
+    
+    // Filtrar y formatear contactos
+    const contactMap = new Map();
+    
+    // Procesar los contactos filtrados
+    // Ordenar por nombre y por longitud de número (más corto primero)
+    contacts
+      .sort((a, b) => {
+        const nameCmp = (a.name || '').localeCompare(b.name || '');
+        if (nameCmp !== 0) return nameCmp;
+        const lenA = (a.id.user || '').length;
+        const lenB = (b.id.user || '').length;
+        return lenA - lenB; // número más corto primero
+      })
+      .forEach(c => {
+        let number = (c.id.user || '').replace(/[^\d+]/g, ''); // Eliminar todo excepto dígitos y +
+        
+        // Verificar si el número tiene formato internacional
+        const isInternational = number.startsWith('+') || number.startsWith('00');
+        
+        // Validación mejorada para números internacionales
+        const isValidNumber = (() => {
+          // Eliminar prefijos internacionales para validación
+          const cleanNumber = number.replace(/^\+/, '').replace(/^00/, '');
+          
+          // Longitud típica de números internacionales (incluyendo código de país)
+          // Mínimo 8 dígitos (países pequeños) y máximo 15 (incluyendo códigos de país largos)
+          return /^\d{8,15}$/.test(cleanNumber);
+        })();
+        
+        // Si ya existe el contacto, verificar cuál número es mejor
+        if (contactMap.has(c.name)) {
+          const existing = contactMap.get(c.name);
 
-    const filtered = contacts
-      // Excluir grupos y el propio usuario
-      .filter(c => !c.isGroup)
-      .map(c => ({
-        name: c.pushname || c.name || c.id.user,
-        number: c.id.user,
-        id: c.id._serialized,
-      }));
+          const existingValid = /^\d{8,15}$/.test(existing.number.replace(/^\+/, '').replace(/^00/, ''));
 
-    res.json(filtered);
+          // Reemplazar si (1) el existente es inválido y el nuevo es válido
+          //    o (2) ambos válidos, pero el nuevo es más corto
+          const shouldReplace = (!existingValid && isValidNumber) ||
+                               (existingValid && isValidNumber && number.length < existing.number.length);
+
+          if (shouldReplace) {
+            contactMap.set(c.name, {
+              name: c.name,
+              number: number,
+              id: c.id._serialized,
+              isInternational: isInternational
+            });
+            console.log(`Actualizando número para ${c.name}: ${existing.number} -> ${number}`);
+          }
+        } 
+        // Si no existe, agregarlo si el número parece válido
+        else if (isValidNumber) {
+          contactMap.set(c.name, {
+            name: c.name,
+            number: number,
+            id: c.id._serialized,
+            isInternational: isInternational
+          });
+        } else {
+          console.log(`Contacto con número potencialmente inválido omitido: ${c.name} (${number})`);
+        }
+      });
+
+    // Convertir a array y formatear números
+    const validContacts = Array.from(contactMap.values())
+      .map(contact => {
+        // Formatear número para mostrar (agregar + si es internacional)
+        let displayNumber = contact.number;
+        if (contact.isInternational && !contact.number.startsWith('+')) {
+          displayNumber = `+${contact.number.replace(/^00/, '')}`;
+        }
+        
+        // Obtener el segmento guardado si existe
+        const segment = contactSegments[contact.id] || contactSegments[contact.number] || null;
+        
+        return {
+          ...contact,
+          number: displayNumber,
+          segment: segment || undefined // Usar undefined en lugar de null para que no aparezca en el JSON
+        };
+      });
+      
+    console.log(`Se encontraron ${validContacts.length} contactos con números válidos`);
+    res.json(validContacts);
   } catch (err) {
     console.error('Error al obtener contactos:', err);
     res.status(500).json({ error: 'No se pudieron obtener los contactos de WhatsApp.' });
   }
 });
+
+// Objeto para almacenar los segmentos de los contactos (en producción, usa una base de datos)
+const contactSegments = {};
+
+// Endpoint para actualizar segmentos de contactos
+app.post('/api/update-segments', express.json(), (req, res) => {
+  try {
+    const { segments } = req.body;
+    if (!segments) {
+      return res.status(400).json({ success: false, message: 'Datos de segmentos no proporcionados' });
+    }
+    
+    // Actualizar los segmentos
+    Object.assign(contactSegments, segments);
+    
+    // Guardar en un archivo para persistencia (en producción, usa una base de datos)
+    fs.writeFileSync('contactSegments.json', JSON.stringify(contactSegments, null, 2));
+    
+    res.json({ success: true, message: 'Segmentos actualizados correctamente' });
+  } catch (err) {
+    console.error('Error al actualizar segmentos:', err);
+    res.status(500).json({ success: false, message: 'Error al actualizar segmentos' });
+  }
+});
+
+// Cargar segmentos guardados al iniciar el servidor
+if (fs.existsSync('contactSegments.json')) {
+  try {
+    const data = fs.readFileSync('contactSegments.json', 'utf8');
+    Object.assign(contactSegments, JSON.parse(data));
+    console.log('Segmentos de contactos cargados correctamente');
+  } catch (err) {
+    console.error('Error al cargar segmentos de contactos:', err);
+  }
+}
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {

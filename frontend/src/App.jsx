@@ -18,7 +18,10 @@ import {
   X,
   CheckCircle,
   AlertCircle,
-  Loader2
+  Loader2,
+  Settings,
+  Search,
+  Pencil
 } from 'lucide-react'
 import { useContacts } from './hooks/useContacts'
 import { useMessages, useWhatsApp } from './hooks/useMessages'
@@ -98,8 +101,7 @@ function App() {
   const menuItems = [
     { id: 'contactos', label: 'Contactos', icon: Users },
     { id: 'mensajes', label: 'Mensajes', icon: MessageSquare },
-    { id: 'programados', label: 'Envíos programados', icon: Clock },
-    { id: 'historial', label: 'Historial y estadísticas', icon: BarChart3 },
+    { id: 'historial', label: 'Historial y Programados', icon: Clock }
   ]
 
   if (!isLoggedIn) {
@@ -268,13 +270,12 @@ function App() {
               setSentMessages={setSentMessages}
             />
           )}
-          {currentSection === 'programados' && (
-            <ProgramadosSection scheduledMessages={scheduledMessages} />
-          )}
           {currentSection === 'historial' && (
-            <HistorialSection sentMessages={sentMessages} />
+            <div className="space-y-8">
+              <HistorialSection sentMessages={sentMessages} />
+              <ProgramadosSection scheduledMessages={scheduledMessages} />
+            </div>
           )}
-
         </main>
       </div>
       {/* El componente WaQr ahora se maneja dentro de MensajesSection */}
@@ -332,9 +333,26 @@ function InicioSection() {
 }
 
 function ContactosSection() {
-  const { contacts, loading, error, importContacts } = useContacts()
+  const { 
+    contacts, 
+    loading, 
+    error, 
+    importContacts,
+    refreshContacts,
+    assignSegment,
+    availableSegments
+  } = useContacts()
+  
   const [importLoading, setImportLoading] = useState(false)
   const [importResult, setImportResult] = useState(null)
+  const [segmentFilter, setSegmentFilter] = useState('todos')
+  const [searchTerm, setSearchTerm] = useState('')
+  const [editingContact, setEditingContact] = useState(null)
+  const [newSegment, setNewSegment] = useState('')
+  const [showCreateSegment, setShowCreateSegment] = useState(false)
+  const [segmentName, setSegmentName] = useState('')
+  const [selectedContacts, setSelectedContacts] = useState([])
+  const [contactSearch, setContactSearch] = useState('')
 
   const handleFileUpload = async (event) => {
     const file = event.target.files[0]
@@ -356,37 +374,127 @@ function ContactosSection() {
     }
   }
 
+  // Función para manejar la selección de contactos
+  const toggleContactSelection = (contactId) => {
+    setSelectedContacts(prev => 
+      prev.includes(contactId)
+        ? prev.filter(id => id !== contactId)
+        : [...prev, contactId]
+    )
+  }
+
+  // Función para crear un nuevo segmento
+  const handleCreateSegment = async () => {
+    if (!segmentName.trim()) return
+    
+    try {
+      // Aquí iría la llamada a la API para crear el segmento
+      // await createSegment(segmentName, selectedContacts);
+      
+      // Actualizar contactos en el estado local para reflejar los cambios inmediatamente
+      const selectedNumbers = contacts
+        .filter(c => selectedContacts.includes(c.id))
+        .map(c => c.number);
+      assignSegment(segmentName, selectedNumbers);
+
+      // (Opcional) Refrescar desde backend si es necesario
+      // await refreshContacts()
+      
+      // Limpiar el formulario
+      setSegmentName('')
+      setSelectedContacts([])
+      setShowCreateSegment(false)
+      
+      // Mostrar mensaje de éxito
+      alert(`Segmento "${segmentName}" creado exitosamente`)
+    } catch (error) {
+      console.error('Error al crear el segmento:', error)
+      alert('Error al crear el segmento. Por favor, inténtalo de nuevo.')
+    }
+  }
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">Gestión de Contactos</h2>
-          <p className="text-gray-600">Administra y organiza tu base de contactos</p>
+      <div className="flex flex-col space-y-4">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900">Gestión de Contactos</h2>
+            <p className="text-gray-600">Administra y organiza tu base de contactos</p>
+          </div>
+          <div className="w-full sm:w-auto">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Input
+                type="text"
+                placeholder="Buscar contactos..."
+                className="pl-10 w-full sm:w-64"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
+            </div>
+          </div>
         </div>
-        <div className="relative">
-          <input
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            onChange={handleFileUpload}
-            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
-            disabled={importLoading}
-          />
-          <Button 
-            className="bg-blue-600 hover:bg-blue-700"
-            disabled={importLoading}
-          >
-            {importLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Importando...
-              </>
-            ) : (
-              <>
-                <Upload className="w-4 h-4 mr-2" />
-                Subir CSV/Excel
-              </>
-            )}
-          </Button>
+        <div className="flex flex-col sm:flex-row gap-3 items-end">
+          <div className="w-full sm:w-auto">
+            <Label htmlFor="segment-filter" className="block text-sm font-medium text-gray-700 mb-1">
+              Filtrar por segmento:
+            </Label>
+            <div className="flex gap-2">
+              <select
+                id="segment-filter"
+                value={segmentFilter}
+                onChange={(e) => setSegmentFilter(e.target.value)}
+                className="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm h-10 px-3 border"
+              >
+                {availableSegments.map(segment => (
+                  <option key={segment} value={segment}>
+                    {segment === 'todos' ? 'Todos los segmentos' : segment}
+                  </option>
+                ))}
+              </select>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => setSegmentFilter('todos')}
+                className="whitespace-nowrap"
+              >
+                Limpiar filtro
+              </Button>
+              <Button 
+                variant="default" 
+                size="sm" 
+                onClick={() => setShowCreateSegment(true)}
+                className="whitespace-nowrap bg-green-600 hover:bg-green-700"
+              >
+                + Crear segmento
+              </Button>
+            </div>
+          </div>
+          <div className="relative">
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              onChange={handleFileUpload}
+              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              disabled={importLoading}
+            />
+            <Button 
+              className="bg-blue-600 hover:bg-blue-700"
+              disabled={importLoading}
+            >
+              {importLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Importando...
+                </>
+              ) : (
+                <>
+                  <Upload className="w-4 h-4 mr-2" />
+                  Subir CSV/Excel
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -433,13 +541,72 @@ function ContactosSection() {
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
                   {contacts
-                    .slice()
+                    .filter(contact => {
+                      const matchesSearch = searchTerm === '' || 
+                        contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                        contact.number?.includes(searchTerm);
+                      const matchesSegment = segmentFilter === 'todos' || contact.segment === segmentFilter;
+                      return matchesSearch && matchesSegment;
+                    })
                     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                     .map((contact) => (
-                      <tr key={contact.id}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{contact.name}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">{contact.number}</td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600 capitalize">{contact.segment || '-'}</td>
+                      <tr key={contact.id} className="hover:bg-gray-50">
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                          {contact.name}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {contact.number}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
+                          {editingContact === contact.id ? (
+                            <div className="flex items-center gap-2">
+                              <Input
+                                type="text"
+                                value={newSegment}
+                                onChange={(e) => setNewSegment(e.target.value)}
+                                className="h-8 text-sm"
+                                placeholder="Nuevo segmento"
+                              />
+                              <Button 
+                                size="sm" 
+                                onClick={async () => {
+                                  // Aquí iría la llamada a la API para actualizar el segmento
+                                  try {
+                                    // await updateContactSegment(contact.id, newSegment);
+                                    await refreshContacts();
+                                    setEditingContact(null);
+                                  } catch (error) {
+                                    console.error('Error al actualizar segmento:', error);
+                                  }
+                                }}
+                              >
+                                Guardar
+                              </Button>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => setEditingContact(null)}
+                              >
+                                Cancelar
+                              </Button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center justify-between">
+                              <span className="capitalize">{contact.segment || 'Sin segmento'}</span>
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100"
+                                onClick={() => {
+                                  setEditingContact(contact.id);
+                                  setNewSegment(contact.segment || '');
+                                }}
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          )}
+                        </td>
                       </tr>
                     ))}
                 </tbody>
@@ -447,6 +614,129 @@ function ContactosSection() {
             </div>
           </CardContent>
         </Card>
+      )}
+
+      {/* Modal para crear segmento */}
+      {showCreateSegment && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[80vh] overflow-y-auto">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold">Crear Nuevo Segmento</h3>
+              <button 
+                onClick={() => {
+                  setShowCreateSegment(false)
+                  setSegmentName('')
+                  setSelectedContacts([])
+                }}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="segment-name">Nombre del segmento</Label>
+                <Input
+                  id="segment-name"
+                  value={segmentName}
+                  onChange={(e) => setSegmentName(e.target.value)}
+                  placeholder="Ej: Clientes frecuentes, Proveedores, etc."
+                  className="mt-1"
+                />
+              </div>
+              
+              <div>
+                <div className="flex justify-between items-center mb-2">
+                  <Label>Seleccionar contactos ({selectedContacts.length} seleccionados)</Label>
+                  <div className="relative w-64">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="text"
+                      placeholder="Buscar contactos..."
+                      className="pl-10 h-8 text-sm"
+                      value={contactSearch}
+                      onChange={(e) => setContactSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+                <div className="mt-2 border rounded-md max-h-60 overflow-y-auto">
+                  {contacts.length > 0 ? (
+                    <table className="min-w-full divide-y divide-gray-200">
+                      <thead className="bg-gray-50">
+                        <tr>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            <input 
+                              type="checkbox"
+                              checked={selectedContacts.length === contacts.length && contacts.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedContacts(contacts.map(c => c.id))
+                                } else {
+                                  setSelectedContacts([])
+                                }
+                              }}
+                              className="rounded"
+                            />
+                          </th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
+                        </tr>
+                      </thead>
+                      <tbody className="bg-white divide-y divide-gray-200">
+                        {contacts
+                          .filter(contact => 
+                            contact.name?.toLowerCase().includes(contactSearch.toLowerCase()) ||
+                            contact.number?.includes(contactSearch)
+                          )
+                          .map((contact) => (
+                          <tr key={contact.id} className="hover:bg-gray-50">
+                            <td className="px-6 py-4 whitespace-nowrap">
+                              <input
+                                type="checkbox"
+                                checked={selectedContacts.includes(contact.id)}
+                                onChange={() => toggleContactSelection(contact.id)}
+                                className="rounded"
+                              />
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                              {contact.name}
+                            </td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {contact.number}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="p-4 text-gray-500 text-center">No hay contactos disponibles</p>
+                  )}
+                </div>
+              </div>
+              
+              <div className="flex justify-end space-x-3 pt-4">
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    setShowCreateSegment(false)
+                    setSegmentName('')
+                    setSelectedContacts([])
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button 
+                  onClick={handleCreateSegment}
+                  disabled={!segmentName.trim() || selectedContacts.length === 0}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  Crear segmento
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -463,9 +753,12 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
   const [schedule, setSchedule] = useState(false)
   const [scheduledDate, setScheduledDate] = useState('')
   const [imagePreview, setImagePreview] = useState(null)
+  const [manualNumber, setManualNumber] = useState('')
   const [imageFile, setImageFile] = useState(null)
   // Buscador de contactos
   const [search, setSearch] = useState('')
+  // Números adicionales (no en contactos)
+  const [additionalNumbers, setAdditionalNumbers] = useState('')
 
   // Efecto robusto para envío programado: un solo intervalo global
   useEffect(() => {
@@ -565,6 +858,39 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
       setWaResult({ success: false, message: 'Por favor ingresa un mensaje o adjunta una imagen' });
       return;
     }
+    
+    // Procesar números adicionales (soporte internacional)
+    const additionalNumbersList = additionalNumbers
+      .split(',')
+      .map(num => num.trim())
+      .filter(num => {
+        if (!num) return false;
+        
+        // Eliminar todo lo que no sea dígito o signo +
+        const cleanNum = num.replace(/[^\d+]/g, '');
+        
+        // Validar formato internacional
+        const isValid = /^(\+\d{1,3})?\d{8,15}$/.test(cleanNum);
+        
+        if (!isValid) {
+          console.warn(`Formato de número inválido: ${num}`);
+          return false;
+        }
+        
+        // Asegurar que tenga el prefijo +
+        return cleanNum.startsWith('+') ? cleanNum : `+${cleanNum}`;
+      });
+    
+    // Combinar contactos seleccionados con números adicionales
+    const allRecipients = [...new Set([...selectedContacts, ...additionalNumbersList])];
+    
+    if (allRecipients.length === 0) {
+      setWaResult({ 
+        success: false, 
+        message: 'Selecciona al menos un contacto o ingresa números internacionales válidos (ej: +51974672423, +573001234567)' 
+      });
+      return;
+    }
 
     setWaLoading(true);
     try {
@@ -583,8 +909,8 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
         ]);
         setWaResult({ success: true, message: 'Mensaje programado correctamente.' });
       } else {
-        // Envío inmediato a todos los seleccionados
-        for (const to of selectedContacts) {
+        // Envío inmediato a todos los seleccionados + números adicionales
+        for (const to of allRecipients) {
           await sendWhatsAppMessage({ 
             to, 
             message: messageContent,
@@ -640,13 +966,14 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
     )
   }
 
-  // Filtrar contactos por búsqueda
+  // Filtrar contactos por búsqueda y segmento
   const filteredContacts = contacts
     .slice()
     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
     .filter(contact =>
       contact.name?.toLowerCase().includes(search.toLowerCase()) ||
-      contact.number?.toLowerCase().includes(search.toLowerCase())
+      contact.number?.toLowerCase().includes(search.toLowerCase()) ||
+      (contact.segment && contact.segment.toLowerCase().includes(search.toLowerCase()))
     )
 
   return (
@@ -708,36 +1035,85 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="waTo">Destinatarios</Label>
+              <Label>Destinatarios</Label>
+              
+              {/* Números seleccionados */}
+              {selectedContacts.length > 0 && (
+                <div className="mb-2 p-2 border rounded bg-gray-50">
+                  <p className="text-xs text-gray-500 mb-1">Seleccionados:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedContacts.map((number, index) => (
+                      <span 
+                        key={index}
+                        className="inline-flex items-center bg-blue-100 text-blue-800 text-xs px-2.5 py-0.5 rounded"
+                      >
+                        {number}
+                        <button 
+                          onClick={() => setSelectedContacts(prev => prev.filter(n => n !== number))}
+                          className="ml-1.5 text-blue-600 hover:text-blue-800"
+                        >
+                          ×
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Buscador de contactos */}
               <Input
                 type="text"
-                placeholder="Buscar contacto por nombre o número..."
+                placeholder="Buscar contacto..."
                 value={search}
                 onChange={e => setSearch(e.target.value)}
                 className="mb-2"
               />
-              {contactsLoading ? (
-                <div className="text-gray-500">Cargando contactos...</div>
-              ) : contactsError ? (
-                <div className="text-red-500">Error al cargar contactos</div>
-              ) : (
-                <div className="border rounded p-2 max-h-48 overflow-y-auto bg-gray-50">
-                  {filteredContacts.map(contact => (
-                    <label key={contact.id} className="flex items-center space-x-2 py-1 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={selectedContacts.includes(contact.number)}
-                        onChange={() => handleContactCheck(contact.number)}
-                      />
-                      <span>{contact.name} ({contact.number})</span>
-                    </label>
-                  ))}
-                  {filteredContacts.length === 0 && (
-                    <div className="text-xs text-gray-400 px-2 py-1">No se encontraron contactos.</div>
-                  )}
-                </div>
-              )}
-              <div className="text-xs text-gray-500 mt-1">Seleccionados: {selectedContacts.length}</div>
+
+              {/* Lista de contactos */}
+              <div className="border rounded p-2 max-h-48 overflow-y-auto bg-gray-50">
+                {contactsLoading ? (
+                  <div className="text-gray-500 text-center py-2">Cargando contactos...</div>
+                ) : contactsError ? (
+                  <div className="text-red-500 text-center py-2">Error al cargar contactos</div>
+                ) : filteredContacts.length > 0 ? (
+                  filteredContacts.map(contact => (
+                    <div 
+                      key={contact.id} 
+                      className="flex items-center p-2 hover:bg-gray-100 rounded cursor-pointer"
+                      onClick={() => {
+                        if (!selectedContacts.includes(contact.number)) {
+                          setSelectedContacts(prev => [...prev, contact.number]);
+                        }
+                      }}
+                    >
+                      <div className="flex-1">
+                        <p className="font-medium">{contact.name}</p>
+                        <p className="text-xs text-gray-500">{contact.number}</p>
+                      </div>
+                      {selectedContacts.includes(contact.number) && (
+                        <span className="text-green-500">✓</span>
+                      )}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-gray-500 text-center py-2">No se encontraron contactos</div>
+                )}
+              </div>
+
+              {/* Campo para números adicionales */}
+              <div className="mt-3">
+                <Label>Agregar números manualmente (separados por comas)</Label>
+                <Input
+                  type="text"
+                  placeholder="Ej: +51974672423, +573001234567"
+                  value={additionalNumbers}
+                  onChange={(e) => setAdditionalNumbers(e.target.value)}
+                  className="text-sm py-2 mt-1"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Ingresa números con código de país (ej: +51...)
+                </p>
+              </div>
             </div>
             <div className="flex items-center space-x-2">
               <input
@@ -781,19 +1157,12 @@ function ProgramadosSection({ scheduledMessages }) {
   }, [])
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-2xl font-bold text-gray-900">Envíos Programados</h2>
-        <div className="text-sm text-gray-600 font-mono bg-gray-100 rounded px-3 py-1">
-          Hora actual: {now.toLocaleString()}
-        </div>
-      </div>
-      <p className="text-gray-600">Gestiona tus mensajes programados para envío futuro.</p>
+    <div className="space-y-6 mt-12">
+      <h2 className="text-2xl font-bold text-gray-900">Mensajes Programados</h2>
+      <p className="text-gray-600">Revisa y gestiona tus mensajes programados.</p>
+      
       <Card>
-        <CardHeader>
-          <CardTitle>Próximos Envíos</CardTitle>
-        </CardHeader>
-        <CardContent>
+        <CardContent className="p-0">
           <div className="overflow-x-auto">
             <table className="min-w-full divide-y divide-gray-200">
               <thead className="bg-gray-50">
@@ -832,7 +1201,7 @@ function ProgramadosSection({ scheduledMessages }) {
   )
 }
 
-function HistorialSection({ sentMessages }) {
+function HistorialSection({ sentMessages, scheduledMessages }) {
   const { historyStats, loading, error } = useStats()
 
   if (loading) {
@@ -990,6 +1359,10 @@ function ConfiguracionSection() {
       alert('Error cerrando sesión WhatsApp.');
     }
   }
+
+  useEffect(() => {
+    fetchContacts();
+  }, []);
 
   useEffect(() => {
     if (config) {
