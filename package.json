@@ -1,52 +1,123 @@
 {
-  "devDependencies": {
-    "concurrently": "^9.2.0"
-  },
-  "name": "apy",
+  "name": "apisky",
   "version": "1.0.0",
-  "description": "Este proyecto es un ejemplo sencillo para gestionar envíos de mensajes promocionales a través de WhatsApp. Incluye un backend con Node.js y Express y un frontend construido con React y Vite.",
-  "main": "index.js",
-  "dependencies": {
-    "ansi-regex": "^5.0.1",
-    "ansi-styles": "^4.3.0",
-    "chalk": "^4.1.2",
-    "cliui": "^8.0.1",
-    "color-convert": "^2.0.1",
-    "color-name": "^1.1.4",
-    "emoji-regex": "^8.0.0",
-    "escalade": "^3.2.0",
-    "get-caller-file": "^2.0.5",
-    "has-flag": "^4.0.0",
-    "is-fullwidth-code-point": "^3.0.0",
-    "lodash": "^4.17.21",
-    "require-directory": "^2.1.1",
-    "rxjs": "^7.8.2",
-    "shell-quote": "^1.8.3",
-    "string-width": "^4.2.3",
-    "strip-ansi": "^6.0.1",
-    "supports-color": "^8.1.1",
-    "tree-kill": "^1.2.2",
-    "tslib": "^2.8.1",
-    "wrap-ansi": "^7.0.0",
-    "y18n": "^5.0.8",
-    "yargs": "^17.7.2",
-    "yargs-parser": "^21.1.1"
+  "description": "WhatsApp Mass Messaging Application",
+  "author": "Apisky",
+  "main": "electron/main.js",
+  "homepage": "./",
+  "bin": "dist/Apisky.exe",
+  "pkg": {
+    "targets": [
+      "node18-win-x64"
+    ],
+    "outputPath": "dist",
+    "assets": [
+      "electron/**/*",
+      "Backend/**/*",
+      "frontend/dist/**/*",
+      "node_modules/**/*"
+    ]
   },
   "scripts": {
     "start": "concurrently \"npm run start:backend\" \"npm run start:frontend\"",
     "start:backend": "cd Backend && npm start",
     "start:frontend": "cd frontend && npm run dev",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\" \"wait-on http://localhost:5173 && electron .\"",
+    "build": "cd frontend && npm run build",
+    "electron": "electron .",
+    "pack": "npm run build && electron-builder --dir",
+    "pack:win": "npm run build && electron-builder --dir --win",
+    "dist": "npm run build && electron-builder",
+    "dist:win": "npm run build && electron-builder --win --dir",
+    "dist:win-installer": "npm run build && electron-builder --win",
+    "dist:mac": "npm run build && electron-builder --mac",
+    "dist:linux": "npm run build && electron-builder --linux",
+    "package:manual": "npm run build && node scripts/package-manual.js",
+    "build:exe": "npm run build && node scripts/build-exe.js",
+    "create:zip": "npm run build:exe && node scripts/create-zip.js",
+    "distribute": "npm run create:zip",
+    "build:standalone-exe": "npm run build && node scripts/build-standalone-exe.js",
+    "build:simple-exe": "npm run build && node scripts/build-simple-exe.js",
+    "create:real-exe": "npm run build && node scripts/create-real-exe.js"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/jhosh-lm10/Apisky.git"
+  "build": {
+    "appId": "com.apisky.app",
+    "productName": "Apisky",
+    "directories": {
+      "output": "dist"
+    },
+    "asar": true,
+    "asarUnpack": [
+      "Backend/**",
+      "node_modules/puppeteer/**",
+      "node_modules/@puppeteer/**",
+      "node_modules/chromium-bidi/**",
+      "Backend/node_modules/puppeteer/**",
+      "Backend/node_modules/@puppeteer/**",
+      "Backend/node_modules/chromium-bidi/**",
+      "**/*.node"
+    ],
+    "files": [
+      "electron/**/*",
+      "Backend/**/*",
+      "frontend/dist/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "Backend/uploads",
+        "to": "uploads"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "assets/icon.ico",
+      "signAndEditExecutable": false
+    },
+    "mac": {
+      "target": "dmg",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "forceCodeSigning": false
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/jhosh-lm10/Apisky/issues"
+  "devDependencies": {
+    "archiver": "^6.0.1",
+    "concurrently": "^8.2.2",
+    "electron": "^28.1.0",
+    "electron-builder": "^22.14.13",
+    "fs-extra": "^11.3.1",
+    "nexe": "^4.0.0-beta.19",
+    "pkg": "^5.8.1",
+    "wait-on": "^7.2.0"
   },
-  "homepage": "https://github.com/jhosh-lm10/Apisky#readme"
+  "dependencies": {
+    "axios": "^1.10.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.5.0",
+    "express": "^5.1.0",
+    "libphonenumber-js": "^1.12.10",
+    "multer": "^2.0.1",
+    "puppeteer": "13.7.0",
+    "qrcode-terminal": "^0.12.0",
+    "whatsapp-web.js": "1.23.0",
+    "xlsx": "^0.18.5"
+  }
 }

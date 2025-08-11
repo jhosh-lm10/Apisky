@@ -171,6 +171,23 @@ function App() {
 
   const { whatsappStatus } = useConfig();
 
+  // Recipientes preparados desde Contactos para usar en Mensajes
+  const [incomingRecipients, setIncomingRecipients] = useState([])
+  const [incomingMode, setIncomingMode] = useState(null) // 'simple' | 'multi'
+  const [incomingVersion, setIncomingVersion] = useState(0)
+
+  const applyContactsToMessaging = (mode, numbers) => {
+    setIncomingRecipients(numbers)
+    setIncomingMode(mode)
+    setIncomingVersion(v => v + 1)
+    setCurrentSection('mensajes')
+  }
+
+  const clearIncomingRecipients = () => {
+    setIncomingRecipients([])
+    setIncomingMode(null)
+  }
+
   const handleLogin = async (e) => {
     e.preventDefault()
     if (!loginData.username || !loginData.password) {
@@ -389,13 +406,17 @@ function App() {
         {/* Content */}
         <main className="p-6">
 
-          {currentSection === 'contactos' && <ContactosSection />}
+          {currentSection === 'contactos' && <ContactosSection applyContactsToMessaging={applyContactsToMessaging} />}
           {currentSection === 'mensajes' && (
             <MensajesSection
               scheduledMessages={scheduledMessages}
               setScheduledMessages={setScheduledMessages}
               sentMessages={sentMessages}
               setSentMessages={setSentMessages}
+              incomingRecipients={incomingRecipients}
+              incomingMode={incomingMode}
+              incomingVersion={incomingVersion}
+              onRecipientsApplied={clearIncomingRecipients}
             />
           )}
           {currentSection === 'historial' && (
@@ -461,7 +482,7 @@ function InicioSection() {
   )
 }
 
-function ContactosSection() {
+function ContactosSection({ applyContactsToMessaging }) {
   const { 
     contacts, 
     loading, 
@@ -469,7 +490,8 @@ function ContactosSection() {
     importContacts,
     refreshContacts,
     assignSegment,
-    availableSegments
+    availableSegments,
+    exportContacts
   } = useContacts()
   
   const [importLoading, setImportLoading] = useState(false)
@@ -582,14 +604,6 @@ function ContactosSection() {
                 ))}
               </select>
               <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => setSegmentFilter('todos')}
-                className="whitespace-nowrap"
-              >
-                Limpiar filtro
-              </Button>
-              <Button 
                 variant="default" 
                 size="sm" 
                 onClick={() => setShowCreateSegment(true)}
@@ -622,6 +636,46 @@ function ContactosSection() {
                   Subir CSV/Excel
                 </>
               )}
+            </Button>
+          </div>
+          {/* Botones para usar selección/seleccionados en Mensajes */}
+          <div className="flex gap-2 flex-wrap">
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-indigo-600 hover:bg-indigo-700"
+              onClick={() => {
+                // Usar SOLO seleccionados si hay, si no, usar filtrados
+                const base = selectedContacts.length > 0
+                  ? contacts.filter(c => selectedContacts.includes(c.id))
+                  : contacts.filter(contact => {
+                      const matchesSearch = searchTerm === '' || contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) || contact.number?.includes(searchTerm);
+                      const matchesSegment = segmentFilter === 'todos' || contact.segment === segmentFilter;
+                      return matchesSearch && matchesSegment;
+                    });
+                const numbers = base.map(c => c.number);
+                applyContactsToMessaging('simple', numbers);
+              }}
+            >
+              Usar contactos en MS
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              className="bg-purple-600 hover:bg-purple-700"
+              onClick={() => {
+                const base = selectedContacts.length > 0
+                  ? contacts.filter(c => selectedContacts.includes(c.id))
+                  : contacts.filter(contact => {
+                      const matchesSearch = searchTerm === '' || contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) || contact.number?.includes(searchTerm);
+                      const matchesSegment = segmentFilter === 'todos' || contact.segment === segmentFilter;
+                      return matchesSearch && matchesSegment;
+                    });
+                const numbers = base.map(c => c.number);
+                applyContactsToMessaging('multi', numbers);
+              }}
+            >
+              Usar contactos en MM
             </Button>
           </div>
         </div>
@@ -666,6 +720,7 @@ function ContactosSection() {
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Teléfono</th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Segmento</th>
+                    <th scope="col" className="px-6 py-3" />
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
@@ -679,7 +734,7 @@ function ContactosSection() {
                     })
                     .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
                     .map((contact) => (
-                      <tr key={contact.id} className="hover:bg-gray-50">
+                      <tr key={contact.id} className="group hover:bg-gray-50">
                         <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
                           {contact.name}
                         </td>
@@ -735,6 +790,15 @@ function ContactosSection() {
                               </Button>
                             </div>
                           )}
+                        </td>
+                        <td className="px-3 py-4 whitespace-nowrap text-right text-sm">
+                          <button
+                            title="Eliminar"
+                            onClick={() => removeContact(contact.id || contact.number)}
+                            className="opacity-0 group-hover:opacity-40 hover:opacity-80 transition text-gray-400 hover:text-red-600"
+                          >
+                            ×
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -871,7 +935,7 @@ function ContactosSection() {
   )
 }
 
-function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages, setSentMessages }) {
+function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages, setSentMessages, incomingRecipients, incomingMode, incomingVersion, onRecipientsApplied }) {
   const { sendMessage, loading, error } = useMessages()
   const { whatsappStatus, checkWhatsappStatus } = useConfig()
   const { contacts, loading: contactsLoading, error: contactsError } = useContacts()
@@ -884,6 +948,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
   const [imagePreview, setImagePreview] = useState(null)
   const [manualNumber, setManualNumber] = useState('')
   const [imageFile, setImageFile] = useState(null)
+  const [delaySeconds, setDelaySeconds] = useState(0)
   // Buscador de contactos
   const [search, setSearch] = useState('')
   // Estado para el modo de mensaje: 'simple' o 'multi'
@@ -892,6 +957,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
   const [multiSections, setMultiSections] = useState([
     { type: 'text', value: '' }
   ]);
+  const [multiRecipientsInput, setMultiRecipientsInput] = useState('');
 
   // Efecto robusto para envío programado: un solo intervalo global
   useEffect(() => {
@@ -915,7 +981,8 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
         setTimeout(async () => {
           for (const to of msg.recipients) {
             try {
-              await sendWhatsAppMessage({ to, message: msg.content });
+              const textoFinal = reemplazarPlantillasEnTexto(msg.content || '');
+              await sendWhatsAppMessage({ to, message: textoFinal });
             } catch (err) {
               console.error('Error enviando mensaje programado:', err);
             }
@@ -1036,13 +1103,18 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
       } else {
         // Envío inmediato a todos los números seleccionados
         const textoFinal = reemplazarPlantillasEnTexto(messageContent);
-        for (const to of selectedContacts) {
-          await sendWhatsAppMessage({ 
-            to, 
-            message: textoFinal,
-            imageFile: imageFile,
-            caption: textoFinal
-          });
+        // Si hay imagen, se envía una por una con delay; si no, usar endpoint masivo
+        if (imageFile) {
+          const { messagesService } = await import('./services/api');
+          const result = await messagesService.sendImageMessage({ recipients: selectedContacts, imageFile, caption: textoFinal, delaySeconds });
+          const { enqueued = selectedContacts.length, invalid = [], invalidCount = 0 } = result || {};
+          setWaResult({ success: true, message: `Encolados ${enqueued}. Inválidos ${invalidCount}${invalidCount ? `: ${invalid.join(', ')}` : ''}` });
+        } else {
+          // usar servicio masivo
+          const { messagesService } = await import('./services/api');
+          const result = await messagesService.sendMessage({ content: textoFinal, recipients: selectedContacts, delaySeconds });
+          const { enqueued = selectedContacts.length, invalid = [], invalidCount = 0 } = result || {};
+          setWaResult({ success: true, message: `Encolados ${enqueued}. Inválidos ${invalidCount}${invalidCount ? `: ${invalid.join(', ')}` : ''}` });
         }
         
         // Guardar en historial de enviados
@@ -1096,6 +1168,29 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
     }
   };
   const resetMultiSections = () => setMultiSections([{ type: 'text', value: '' }]);
+
+  // Aplicar contactos que llegan desde la vista de Contactos
+  useEffect(() => {
+    if (!incomingRecipients || incomingRecipients.length === 0) return;
+    if (incomingMode === 'multi') {
+      setMessageMode('multi');
+      setSelectedContacts(incomingRecipients);
+      setMultiRecipientsInput(incomingRecipients.join(', '));
+    } else {
+      setMessageMode('simple');
+      setSelectedContacts(incomingRecipients);
+    }
+    // Limpiar origen tras aplicar
+    if (onRecipientsApplied) onRecipientsApplied();
+  }, [incomingVersion]);
+
+  // Limpiar destinatarios al cambiar de sección dentro de Mensajes
+  useEffect(() => {
+    return () => {
+      setSelectedContacts([]);
+      setMultiRecipientsInput('');
+    };
+  }, []);
 
   // Si WhatsApp aún no está conectado, mostrar el QR y salir temprano
   if (!whatsappStatus.connected) {
@@ -1195,7 +1290,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                   placeholder="Escribe tu mensaje aquí..."
                   value={messageContent}
                   onChange={(e) => setMessageContent(e.target.value)}
-                  required
+                  required={!imageFile}
                 />
               </div>
               <div className="space-y-2">
@@ -1211,8 +1306,12 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                         // Actualizar el valor mostrado
                         const value = e.target.value;
                         
-                        // Procesar los números solo cuando se presiona Enter o se pierde el foco
-                        setSelectedContacts([value]);
+                        // Mantener sincronizado mientras escribe
+                        const numbers = value
+                          .split(',')
+                          .map(num => num.trim())
+                          .filter(num => num !== '');
+                        setSelectedContacts(numbers);
                       }}
                       onKeyDown={(e) => {
                         // Permitir todas las teclas
@@ -1333,7 +1432,21 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                   />
                 )}
               </div>
-              <Button type="submit" disabled={waLoading || !messageContent || selectedContacts.length === 0 || (schedule && !scheduledDate)} className="w-full">
+               <div className="flex items-center gap-3">
+                 <div className="flex items-center gap-2">
+                   <Label htmlFor="delaySeconds">Retraso entre envíos (seg)</Label>
+                   <Input
+                     id="delaySeconds"
+                     type="number"
+                     min="0"
+                     placeholder="0"
+                     className="w-28"
+                     value={delaySeconds}
+                     onChange={(e) => setDelaySeconds(Math.max(0, Number(e.target.value)||0))}
+                   />
+                 </div>
+               </div>
+               <Button type="submit" disabled={waLoading || !messageContent || selectedContacts.length === 0 || (schedule && !scheduledDate)} className="w-full">
                 {waLoading ? (schedule ? 'Programando...' : 'Enviando...') : (schedule ? 'Programar Mensaje' : 'Enviar WhatsApp')}
               </Button>
               {waResult && (
@@ -1357,17 +1470,23 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                 }
                 setWaLoading(true);
                 try {
+                  const { messagesService } = await import('./services/api');
+                  let totalEnqueued = 0;
+                  const invalidSet = new Set();
                   for (const section of multiSections) {
-                    for (const to of selectedContacts) {
-                      if (section.type === 'text') {
-                        const textoFinal = reemplazarPlantillasEnTexto(section.value);
-                        await sendWhatsAppMessage({ to, message: textoFinal });
-                      } else if (section.type === 'image') {
-                        await sendWhatsAppMessage({ to, imageFile: section.value });
-                      }
+                    if (section.type === 'text') {
+                      const textoFinal = reemplazarPlantillasEnTexto(section.value);
+                      const result = await messagesService.sendMessage({ content: textoFinal, recipients: selectedContacts, delaySeconds });
+                      totalEnqueued += (result?.enqueued || 0);
+                      (result?.invalid || []).forEach(n => invalidSet.add(n));
+                    } else if (section.type === 'image') {
+                      const result = await messagesService.sendImageMessage({ recipients: selectedContacts, imageFile: section.value, caption: '', delaySeconds });
+                      totalEnqueued += (result?.enqueued || 0);
+                      (result?.invalid || []).forEach(n => invalidSet.add(n));
                     }
                   }
-                  setWaResult({ success: true, message: 'Mensajes enviados correctamente.' });
+                  const invalid = Array.from(invalidSet);
+                  setWaResult({ success: true, message: `Encolados ${totalEnqueued}. Inválidos ${invalid.length}${invalid.length ? `: ${invalid.join(', ')}` : ''}` });
                   resetMultiSections();
                 } catch (err) {
                   setWaResult({ success: false, message: err.message });
@@ -1431,29 +1550,36 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                 <div className="relative">
                   <textarea
                     placeholder="Escribe o pega números (separados por comas) o selecciona de abajo..."
-                    value={selectedContacts.join(', ')}
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      const numbers = value
-                        .split(',')
-                        .map(num => num.trim())
-                        .filter(num => num !== '');
-                      setSelectedContacts(numbers);
-                    }}
+                    value={multiRecipientsInput}
+                    onChange={(e) => setMultiRecipientsInput(e.target.value)}
                     onBlur={(e) => {
                       const value = e.target.value;
-                      setSelectedContacts(value.split(',').map(num => num.trim()).filter(num => num !== ''));
+                      const numbers = value.split(',').map(n => n.trim()).filter(Boolean);
+                      setSelectedContacts(numbers);
+                      setMultiRecipientsInput(numbers.join(', '));
                     }}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        const value = e.target.value;
-                        setSelectedContacts(value.split(',').map(num => num.trim()).filter(num => num !== ''));
+                        const value = e.currentTarget.value || '';
+                        const numbers = value.split(',').map(n => n.trim()).filter(Boolean);
+                        setSelectedContacts(numbers);
+                        setMultiRecipientsInput(numbers.join(', '));
                       }
                     }}
                     className="flex min-h-[60px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono pr-10"
                     rows={2}
                   />
+                  {multiRecipientsInput && (
+                    <button
+                      type="button"
+                      className="absolute right-2 top-2 text-gray-500 hover:text-red-600"
+                      onClick={() => { setMultiRecipientsInput(''); setSelectedContacts([]); }}
+                      title="Limpiar"
+                    >
+                      ×
+                    </button>
+                  )}
                 </div>
                 {/* Aquí puedes agregar el buscador de contactos si lo deseas */}
               </div>
@@ -1528,6 +1654,7 @@ function ProgramadosSection({ scheduledMessages }) {
 
 function HistorialSection({ sentMessages, scheduledMessages }) {
   const { historyStats, loading, error } = useStats()
+  const { history } = useMessages()
 
   if (loading) {
     return (
@@ -1600,6 +1727,39 @@ function HistorialSection({ sentMessages, scheduledMessages }) {
           <CardTitle>Mensajes Enviados</CardTitle>
         </CardHeader>
         <CardContent>
+          {/* Estado de cola/historial del backend */}
+          {history && history.length > 0 && (
+            <div className="mb-6">
+              <h4 className="font-semibold mb-2">Cola/Historial (backend)</h4>
+              <div className="max-h-48 overflow-y-auto border rounded">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50">
+                    <tr>
+                      <th className="px-2 py-1 text-left">Hora</th>
+                      <th className="px-2 py-1 text-left">Destino</th>
+                      <th className="px-2 py-1 text-left">Tipo</th>
+                      <th className="px-2 py-1 text-left">Estado</th>
+                      <th className="px-2 py-1 text-left">Error</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {history.slice().reverse().map(item => (
+                      <tr key={item.id} className="border-t">
+                        <td className="px-2 py-1 whitespace-nowrap">{new Date(item.timestamp).toLocaleTimeString()}</td>
+                        <td className="px-2 py-1 font-mono">{String(item.to).replace('@c.us','')}</td>
+                        <td className="px-2 py-1">{item.type || '-'}</td>
+                        <td className="px-2 py-1">
+                          <span className={`px-2 py-0.5 rounded text-xs ${item.status === 'sent' ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>{item.status}</span>
+                        </td>
+                        <td className="px-2 py-1 text-red-600">{item.error || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
           {sentMessages.length === 0 ? (
             <div className="text-center py-8 text-gray-500">
               <Mail className="mx-auto h-12 w-12 text-gray-400" />
@@ -1667,6 +1827,8 @@ function ConfiguracionSection() {
   const [smtpPass, setSmtpPass] = useState(config?.smtpPass || '')
   const [saveLoading, setSaveLoading] = useState(false)
   const [saveResult, setSaveResult] = useState(null)
+  const [forceLoading, setForceLoading] = useState(false)
+  const [forceResult, setForceResult] = useState(null)
 
   // Cerrar sesión de WhatsApp
   const handleWaLogout = async () => {
@@ -1685,9 +1847,26 @@ function ConfiguracionSection() {
     }
   }
 
-  useEffect(() => {
-    fetchContacts();
-  }, []);
+  const handleForceRestart = async () => {
+    if (forceLoading) return;
+    if (!window.confirm('Esto cerrará la sesión actual y eliminará la carpeta de sesión para forzar un reinicio. ¿Continuar?')) return;
+    try {
+      setForceLoading(true);
+      setForceResult(null);
+      const res = await fetch('http://localhost:3001/api/forzar-reinicio', { method: 'POST' });
+      const data = await res.json();
+      setForceResult(data);
+      alert(data.message || 'Reinicio solicitado. Escanea el nuevo QR.');
+    } catch (err) {
+      console.error('Error forzando reinicio:', err);
+      setForceResult({ success: false, message: 'Error forzando reinicio' });
+      alert('Error forzando reinicio.');
+    } finally {
+      setForceLoading(false);
+    }
+  }
+
+  // (removido) No se requiere cargar contactos desde esta sección
 
   useEffect(() => {
     if (config) {
@@ -1746,6 +1925,9 @@ function ConfiguracionSection() {
       <div className="mt-2">
         <Button variant="destructive" size="sm" onClick={handleWaLogout} className="flex items-center space-x-2">
           <LogOut className="w-4 h-4 mr-2" /> Cerrar sesión de WhatsApp
+        </Button>
+        <Button variant="default" size="sm" onClick={handleForceRestart} disabled={forceLoading} className="ml-3 bg-orange-600 hover:bg-orange-700">
+          {forceLoading ? 'Reiniciando...' : 'Forzar reinicio (limpiar sesión)'}
         </Button>
       </div>
       <p className="text-gray-600">Configura tus integraciones y preferencias de cuenta.</p>

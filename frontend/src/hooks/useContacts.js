@@ -106,7 +106,6 @@ export function useContacts() {
     setError(null);
     try {
       const result = await contactsService.importContacts(file);
-      // Después de importar, podrías querer refrescar la lista de contactos
       const updatedContacts = await contactsService.getContacts();
       setContacts(updatedContacts);
       cachedContacts = updatedContacts;
@@ -119,6 +118,25 @@ export function useContacts() {
     }
   };
 
+  const exportContacts = async () => {
+    try {
+      await contactsService.exportContacts();
+    } catch (e) {
+      console.error('Error exportando contactos', e);
+    }
+  };
+
+  const removeContact = async (idOrNumber) => {
+    try {
+      await contactsService.deleteContact(idOrNumber);
+      const updated = contacts.filter(c => c.id !== idOrNumber && c.number !== idOrNumber);
+      setContacts(updated);
+      cachedContacts = updated;
+    } catch (e) {
+      console.error('Error eliminando contacto', e);
+    }
+  };
+
   return { 
     contacts, 
     loading, 
@@ -126,7 +144,9 @@ export function useContacts() {
     importContacts, 
     refreshContacts,
     assignSegment,
-    availableSegments 
+    availableSegments,
+    exportContacts,
+    removeContact
   };
 }
 

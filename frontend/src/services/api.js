@@ -1,4 +1,5 @@
 // services/api.js
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 // Servicio de autenticación simulado
 const authService = {
   login: async ({ username, password }) => {
@@ -15,7 +16,7 @@ const authService = {
   logout: async () => {
     try {
       // 1. Cerrar sesión en el backend de WhatsApp
-      const waLogoutRes = await fetch('http://localhost:3001/api/wa-logout', {
+      const waLogoutRes = await fetch(`${API_BASE}/api/wa-logout`, {
         method: 'POST'
       });
       
@@ -30,7 +31,7 @@ const authService = {
       console.error('Error en logout:', error);
       // Si falla el cierre de sesión de WhatsApp, intentar forzar reinicio
       try {
-        const forceReset = await fetch('http://localhost:3001/api/forzar-reinicio', {
+        const forceReset = await fetch(`${API_BASE}/api/forzar-reinicio`, {
           method: 'POST'
         });
         
@@ -52,31 +53,82 @@ const authService = {
 const contactsService = {
   getContacts: async () => {
     // Llama al backend para obtener los contactos reales de WhatsApp
-    const res = await fetch('http://localhost:3001/api/wa-contacts');
-    if (!res.ok) throw new Error('No se pudieron obtener los contactos');
+    const res = await fetch(`${API_BASE}/api/wa-contacts`);
+    if (res.status === 503) {
+      // WhatsApp aún no está listo: devolver lista vacía en lugar de error
+      return [];
+    }
+    if (!res.ok) {
+      let msg = 'No se pudieron obtener los contactos';
+      try { msg = (await res.json()).error || msg; } catch {}
+      throw new Error(msg);
+    }
     return await res.json();
   },
   importContacts: async (file) => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        // Simular procesamiento de archivo
-        console.log('Simulando importación de archivo:', file.name);
-        resolve({ success: true, imported: 100, duplicates: 10, failed: 0 });
-      }, 2000);
+    const formData = new FormData();
+    formData.append('file', file);
+    const res = await fetch(`${API_BASE}/api/contacts/import`, {
+      method: 'POST',
+      body: formData,
     });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error importando contactos');
+    return data;
+  },
+  exportContacts: async () => {
+    const res = await fetch(`${API_BASE}/api/contacts/export`);
+    if (!res.ok) throw new Error('Error exportando contactos');
+    const blob = await res.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'contacts.csv';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
+  deleteContact: async (idOrNumber) => {
+    const res = await fetch(`${API_BASE}/api/contacts/${encodeURIComponent(idOrNumber)}`, {
+      method: 'DELETE'
+    });
+    if (!res.ok) throw new Error('Error eliminando contacto');
+    return res.json();
   },
 };
 
 // Servicio de mensajes simulado
 const messagesService = {
-  sendMessage: async ({ content, channel, recipients }) => {
-    return new Promise(resolve => {
-      setTimeout(() => {
-        console.log(`Simulando envío de mensaje por ${channel}:`, { content, recipients });
-        resolve({ success: true, sent: 100, failed: 0 });
-      }, 1500);
+  sendMessage: async ({ content, recipients, delaySeconds = 0 }) => {
+    const res = await fetch(`${API_BASE}/api/send-bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipients, message: content, delaySeconds })
     });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error en envío masivo');
+    return data;
   },
+  sendImageMessage: async ({ recipients, imageFile, caption = '', delaySeconds = 0 }) => {
+    const formData = new FormData();
+    formData.append('recipients', JSON.stringify(recipients));
+    formData.append('image', imageFile);
+    formData.append('caption', caption);
+    formData.append('delaySeconds', String(delaySeconds || 0));
+    const res = await fetch(`${API_BASE}/api/send-bulk-image`, {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Error en envío masivo de imagen');
+    return data;
+  },
+  getHistory: async () => {
+    const res = await fetch(`${API_BASE}/api/messages/history`);
+    if (!res.ok) throw new Error('Error obteniendo historial');
+    return res.json();
+  }
 };
 
 // Servicio de estadísticas simulado
@@ -145,7 +197,7 @@ const configService = {
   },
   checkWhatsappStatus: async () => {
     try {
-      const res = await fetch('http://localhost:3001/api/wa-status');
+      const res = await fetch(`${API_BASE}/api/wa-status`);
       if (!res.ok) throw new Error('No se pudo verificar estado de WhatsApp');
       const data = await res.json();
       // El backend devuelve { ready: true/false }
@@ -166,8 +218,19 @@ const configService = {
 
 // Servicio real para enviar WhatsApp usando el backend
 export async function sendWhatsAppMessage({ to, message, imageFile, caption = '' }) {
+  const normalizeTo = (value) => {
+    const digits = String(value || '')
+      .trim()
+      .replace(/@c\.us$/i, '')
+      .replace(/[^\d]/g, '');
+    if (!digits) throw new Error('Número de destino inválido');
+    return digits; // el backend añadirá @c.us
+  };
+
+  const normalizedTo = normalizeTo(to);
+
   const formData = new FormData();
-  formData.append('to', to);
+  formData.append('to', normalizedTo);
   
   if (imageFile) {
     // Solo adjuntar la imagen si existe
@@ -180,7 +243,7 @@ export async function sendWhatsAppMessage({ to, message, imageFile, caption = ''
     }
     
     // Enviar solo a la ruta de imágenes
-    const res = await fetch('http://localhost:3001/api/send-wa-image', {
+    const res = await fetch(`${API_BASE}/api/send-wa-image`, {
       method: 'POST',
       body: formData,
       // No establecer Content-Type manualmente, el navegador lo hará con el boundary correcto
@@ -193,12 +256,12 @@ export async function sendWhatsAppMessage({ to, message, imageFile, caption = ''
     // Envío de mensaje de texto normal
     formData.append('message', message);
     
-    const res = await fetch('http://localhost:3001/api/send-wa', {
+    const res = await fetch(`${API_BASE}/api/send-wa`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ to, message }),
+      body: JSON.stringify({ to: normalizedTo, message }),
     });
     
     const data = await res.json();
@@ -207,6 +270,6 @@ export async function sendWhatsAppMessage({ to, message, imageFile, caption = ''
   }
 }
 
-export { authService, contactsService, messagesService, statsService, configService };
+export { authService, contactsService, messagesService, statsService, configService, API_BASE };
 
 

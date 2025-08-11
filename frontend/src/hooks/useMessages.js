@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { messagesService } from '../services/api';
 
 export function useMessages() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [history, setHistory] = useState([]);
 
   const sendMessage = async (messageData) => {
     setLoading(true);
@@ -19,7 +20,21 @@ export function useMessages() {
     }
   };
 
-  return { sendMessage, loading, error };
+  // Poll historial
+  useEffect(() => {
+    let timer = null;
+    const fetchHistory = async () => {
+      try {
+        const h = await messagesService.getHistory();
+        setHistory(h);
+      } catch {}
+    };
+    fetchHistory();
+    timer = setInterval(fetchHistory, 2000);
+    return () => { if (timer) clearInterval(timer); };
+  }, []);
+
+  return { sendMessage, loading, error, history };
 }
 
 export function useWhatsApp() {

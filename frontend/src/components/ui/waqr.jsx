@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 
 export default function WaQr() {
   const [qr, setQr] = useState(null);
@@ -6,7 +7,7 @@ export default function WaQr() {
 
   useEffect(() => {
     const fetchQr = () => {
-      fetch('http://localhost:3001/api/wa-qr')
+      fetch(`${API_BASE}/api/wa-qr`)
         .then(res => res.json())
         .then(data => {
           if (data.qr) {

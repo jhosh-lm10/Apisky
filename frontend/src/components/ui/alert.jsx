@@ -1,11 +1,16 @@
 // frontend/src/components/ui/alert.jsx
 import React from 'react';
 
-export function Alert({ children, className = '', ...props }) {
+export function Alert({ children, variant = 'default', className = '', ...props }) {
+  const variantClasses =
+    variant === 'destructive'
+      ? 'border-red-300 bg-red-50 text-red-700'
+      : 'border-gray-200 bg-gray-50 text-gray-800';
+
   return (
     <div
       role="alert"
-      className={`p-4 rounded border border-destructive bg-destructive/10 text-destructive ${className}`}
+      className={`p-4 rounded border ${variantClasses} ${className}`}
       {...props}
     >
       {children}
