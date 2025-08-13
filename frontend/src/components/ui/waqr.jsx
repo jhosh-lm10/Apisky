@@ -6,23 +6,45 @@ export default function WaQr() {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    const fetchQr = () => {
-      fetch(`${API_BASE}/api/wa-qr`)
-        .then(res => res.json())
-        .then(data => {
+    let isMounted = true;
+    
+    const fetchQr = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/wa-qr`);
+        if (!isMounted) return;
+        
+        if (res.ok) {
+          const data = await res.json();
           if (data.qr) {
             setQr(data.qr);
             setError(null);
           } else {
             setError('QR no disponible aún');
           }
-        })
-        .catch(() => setError('Error al obtener el QR'));
+        } else if (res.status === 404) {
+          // Si el endpoint no existe, no mostrar error
+          setError('QR no disponible aún');
+        } else {
+          setError('Error al obtener el QR');
+        }
+      } catch (err) {
+        if (!isMounted) return;
+        // Solo mostrar error si no es un error de red (backend no disponible)
+        if (err.name !== 'TypeError') {
+          setError('Error al obtener el QR');
+        }
+      }
     };
 
-    fetchQr(); // Primer intento inmediato
+    // Retrasar el primer intento para evitar peticiones innecesarias
+    const timeoutId = setTimeout(fetchQr, 500);
     const interval = setInterval(fetchQr, 10000); // Actualizar cada 10s
-    return () => clearInterval(interval);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+      clearInterval(interval);
+    };
   }, []);
 
   return (

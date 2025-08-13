@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button.jsx'
 import { Input } from '@/components/ui/input.jsx'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card.jsx'
@@ -164,6 +164,8 @@ function App() {
   const [loginData, setLoginData] = useState({ username: '', password: '' })
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
+  const [videoLoaded, setVideoLoaded] = useState(false)
+  const videoRef = useRef(null)
 
   // Estado global para mensajes programados y enviados
   const [scheduledMessages, setScheduledMessages] = useState([])
@@ -251,14 +253,56 @@ function App() {
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md shadow-xl">
-          <CardHeader className="space-y-1 text-center">
-            <div className="mx-auto mb-4 w-16 h-16 bg-blue-600 rounded-full flex items-center justify-center">
+      <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
+        {/* Fondo: video con zoom/tilt suave + poster fallback */}
+        <div className="absolute inset-0 overflow-hidden login-video">
+          <video
+            ref={videoRef}
+            className="w-full h-full object-cover login-bg-zoom"
+            autoPlay
+            loop
+            muted
+            playsInline
+            preload="auto"
+            poster={`${import.meta.env.BASE_URL}img/bg.jpg`}
+            controls={false}
+            controlsList="nodownload nofullscreen noplaybackrate"
+            disablePictureInPicture
+            onLoadedData={() => setVideoLoaded(true)}
+            onError={() => setVideoLoaded(true)} // Fallback si video falla
+          >
+            <source src={`${import.meta.env.BASE_URL}video/bg.webm`} type="video/webm" />
+            <source src={`${import.meta.env.BASE_URL}video/bg.mp4`} type="video/mp4" />
+          </video>
+        </div>
+        {/* Poster estático (se muestra si reduce motion, pantallas pequeñas, o mientras carga video) */}
+        <div
+          className={`absolute inset-0 login-poster transition-opacity duration-500 ${videoLoaded ? 'opacity-0' : 'opacity-100'}`}
+          style={{
+            backgroundImage: `url(${import.meta.env.BASE_URL}img/bg.jpg)`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            backgroundRepeat: 'no-repeat'
+          }}
+        />
+        {/* Capa aurora/gradiente animada para dar vida y mezcla */}
+        <div className="absolute inset-0 pointer-events-none login-aurora mix-blend-screen opacity-90" />
+        {/* Vignette radial para mantener el centro claro sin apagar el fondo */}
+        <div className="absolute inset-0 login-vignette" />
+
+        {/* Contenedor del card */}
+        <Card className="login-card relative w-full max-w-md rounded-3xl text-white border border-white border-opacity-30 shadow-[0_20px_60px_-15px_rgba(0,0,0,0.6)]"
+          style={{
+            backgroundColor: 'rgba(255,255,255,0.06)',
+            backdropFilter: 'blur(24px) saturate(1.5)'
+          }}
+        >
+          <CardHeader className="space-y-1 text-center border-white border-opacity-10">
+            <div className="mx-auto mb-4 w-16 h-16 bg-white/20 border border-white/30 rounded-full flex items-center justify-center backdrop-blur-sm">
               <Send className="w-8 h-8 text-white" />
             </div>
-            <CardTitle className="text-2xl font-bold text-gray-900">PIsky</CardTitle>
-            <CardDescription className="text-gray-600">
+            <CardTitle className="text-2xl font-bold text-white">PIsky</CardTitle>
+            <CardDescription className="text-white/80">
               Gestión de mensajes promocionales
             </CardDescription>
           </CardHeader>
@@ -272,33 +316,41 @@ function App() {
               )}
               <div className="space-y-2">
                 <Label htmlFor="username">Usuario</Label>
-                <Input
+                 <Input
                   id="username"
                   type="text"
                   placeholder="Ingresa tu usuario"
                   value={loginData.username}
                   onChange={(e) => setLoginData({...loginData, username: e.target.value})}
-                  className="h-11"
+                   className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
+                   autoComplete="username"
                   disabled={loginLoading}
                   required
                 />
               </div>
               <div className="space-y-2">
                 <Label htmlFor="password">Contraseña</Label>
-                <Input
+                 <Input
                   id="password"
                   type="password"
                   placeholder="Ingresa tu contraseña"
                   value={loginData.password}
                   onChange={(e) => setLoginData({...loginData, password: e.target.value})}
-                  className="h-11"
+                   className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
+                   autoComplete="current-password"
                   disabled={loginLoading}
                   required
                 />
               </div>
+              <div className="flex items-center text-xs text-white/80">
+                <label className="flex items-center gap-2 select-none">
+                  <input type="checkbox" className="login-checkbox" />
+                  Recordarme
+                </label>
+              </div>
               <Button 
                 type="submit" 
-                className="w-full h-11 bg-blue-600 hover:bg-blue-700"
+                className="w-full h-11 bg-transparent hover:bg-white/10 border border-white/70 text-white shadow-[0_0_0_0] backdrop-blur-sm rounded-full transition-colors"
                 disabled={loginLoading}
               >
                 {loginLoading ? (
@@ -313,6 +365,62 @@ function App() {
             </form>
           </CardContent>
         </Card>
+
+        {/* estilos locales para animaciones */}
+        <style>{`
+          @keyframes loginSlowZoom { 0% { transform: scale(1) rotate(0deg); } 100% { transform: scale(1.06) rotate(0.2deg); } }
+          .login-bg-zoom { will-change: transform; animation: loginSlowZoom 40s ease-in-out infinite alternate; filter: saturate(1.45) brightness(1.08) contrast(1.15); }
+          @keyframes auroraMove { 0% { transform: translate(-10%, -10%) rotate(0deg); } 100% { transform: translate(10%, 10%) rotate(15deg); } }
+          .login-aurora {
+            background: radial-gradient(60% 80% at 30% 20%, rgba(255,120,255,0.35), transparent 60%),
+                        radial-gradient(70% 90% at 70% 80%, rgba(255,170,80,0.35), transparent 60%),
+                        radial-gradient(50% 70% at 50% 50%, rgba(80,180,255,0.28), transparent 60%);
+            animation: auroraMove 30s ease-in-out infinite alternate;
+            filter: blur(36px) saturate(1.25);
+          }
+          .login-vignette {
+            background: radial-gradient(60% 55% at 50% 45%, rgba(0,0,0,0) 0%, rgba(0,0,0,0.06) 55%, rgba(0,0,0,0.25) 100%);
+          }
+          /* Inputs minimalistas: sin anillos azules, sin fondo de autofill */
+          .login-card input { outline: none !important; box-shadow: none !important; background: transparent !important; }
+          .login-card input:focus, .login-card input:focus-visible { outline: none !important; box-shadow: none !important; }
+          .login-card input:-webkit-autofill,
+          .login-card input:-webkit-autofill:hover,
+          .login-card input:-webkit-autofill:focus,
+          .login-card input:-webkit-autofill:active {
+            -webkit-box-shadow: 0 0 0 1000px rgba(255,255,255,0.0) inset !important;
+            -webkit-text-fill-color: #ffffff !important;
+            caret-color: #ffffff !important;
+            transition: background-color 9999s ease-in-out 0s !important;
+          }
+          /* Checkbox transparente personalizado */
+          .login-checkbox {
+            appearance: none;
+            width: 16px; height: 16px;
+            border: 1.5px solid rgba(255,255,255,0.7);
+            border-radius: 4px;
+            background: transparent;
+            display: inline-grid; place-content: center;
+            transition: all 150ms ease;
+          }
+          .login-checkbox:focus { box-shadow: 0 0 0 2px rgba(255,255,255,0.2); outline: none; }
+          .login-checkbox::before {
+            content: ""; width: 10px; height: 10px; border-radius: 2px;
+            transform: scale(0); transform-origin: center; transition: transform 150ms ease;
+            background: rgba(255,255,255,0.9);
+          }
+          .login-checkbox:checked::before { transform: scale(1); }
+          /* Fallbacks: si el usuario prefiere menos movimiento o en pantallas pequeñas */
+          .login-poster { display: none; }
+          @media (prefers-reduced-motion: reduce) {
+            .login-video { display: none; }
+            .login-poster { display: block; }
+          }
+          @media (max-width: 640px) {
+            .login-video { display: none; }
+            .login-poster { display: block; }
+          }
+        `}</style>
       </div>
     )
   }
@@ -1193,7 +1301,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
   }, []);
 
   // Si WhatsApp aún no está conectado, mostrar el QR y salir temprano
-  if (!whatsappStatus.connected) {
+  if (!whatsappStatus.connected && !whatsappStatus.loading) {
     return (
       <div className="space-y-6">
         <h2 className="text-2xl font-bold text-gray-900">Conectar WhatsApp</h2>
@@ -1201,6 +1309,20 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
         <WaQr />
         <div className="flex justify-center">
           <Button onClick={checkWhatsappStatus} className="mt-4">Ya escaneé el QR</Button>
+        </div>
+      </div>
+    )
+  }
+
+  // Mostrar loading mientras se verifica el estado de WhatsApp
+  if (whatsappStatus.loading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-center h-64">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+            <p className="text-gray-600">Verificando conexión de WhatsApp...</p>
+          </div>
         </div>
       </div>
     )
