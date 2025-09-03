@@ -22,11 +22,13 @@ try {
   Module._initPaths();
 } catch {}
 const express = require('express');
+// Auth DB disabled (no Postgres)
 const cors = require('cors');
 const multer = require('multer');
 const fs = require('fs');
 const os = require('os');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const QRCode = require('qrcode');
 let puppeteerExecutablePath = process.env.PUPPETEER_EXECUTABLE_PATH || null;
 try {
   if (!puppeteerExecutablePath) {
@@ -58,6 +60,18 @@ try { fs.mkdirSync(DATA_DIR, { recursive: true }); } catch {}
 const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
 try { fs.mkdirSync(UPLOADS_DIR, { recursive: true }); } catch {}
 
+// Forzar la ruta de sesión de WhatsApp Web a una sola ubicación
+const SESSION_DIR = path.join(DATA_DIR, '.wwebjs_auth');
+console.log('=== Ruta de sesión de WhatsApp Web ===');
+console.log('SESSION_DIR:', SESSION_DIR);
+console.log('DATA_DIR:', DATA_DIR);
+console.log('APISKY_DATA_DIR:', process.env.APISKY_DATA_DIR || 'No definida');
+console.log('NODE_ENV:', process.env.NODE_ENV || 'No definida');
+console.log('ELECTRON_RUN_AS_NODE:', process.env.ELECTRON_RUN_AS_NODE || 'No definida');
+console.log('process.cwd():', process.cwd());
+console.log('__dirname:', __dirname);
+console.log('======================================');
+
 // Configuración de multer para manejar la carga de archivos
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
@@ -68,6 +82,93 @@ const storage = multer.diskStorage({
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     const ext = path.extname(file.originalname);
     cb(null, 'img-' + uniqueSuffix + ext);
+  }
+});
+
+// =============================
+// Inicializar Express antes de definir rutas
+// =============================
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// =============================
+// Plantillas (persistencia local en archivos .txt)
+// =============================
+// path y DATA_DIR ya están definidos en este archivo; solo definimos el directorio de plantillas
+const TEMPLATES_DIR = path.join(DATA_DIR, 'templates');
+
+function ensureTemplatesDir() {
+  try {
+    if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+    if (!fs.existsSync(TEMPLATES_DIR)) fs.mkdirSync(TEMPLATES_DIR, { recursive: true });
+  } catch {}
+}
+
+function sanitizeName(name) {
+  return String(name || '').trim().replace(/[^a-zA-Z0-9-_ ]/g, '_');
+}
+
+// Listar plantillas
+app.get('/api/templates', (req, res) => {
+  try {
+    ensureTemplatesDir();
+    const files = fs.readdirSync(TEMPLATES_DIR).filter(f => f.toLowerCase().endsWith('.txt'));
+    const list = files.map(f => {
+      const full = path.join(TEMPLATES_DIR, f);
+      const content = fs.readFileSync(full, 'utf8');
+      const name = path.basename(f, path.extname(f));
+      return { nombre: name, texto: content };
+    });
+    res.json(list);
+  } catch (e) {
+    res.status(500).json({ error: 'Error leyendo plantillas' });
+  }
+});
+
+// Crear plantilla
+app.post('/api/templates', (req, res) => {
+  try {
+    const { nombre, texto } = req.body || {};
+    if (!nombre || !texto) return res.status(400).json({ error: 'nombre y texto son requeridos' });
+    ensureTemplatesDir();
+    const safe = sanitizeName(nombre);
+    const file = path.join(TEMPLATES_DIR, safe + '.txt');
+    if (fs.existsSync(file)) return res.status(409).json({ error: 'La plantilla ya existe' });
+    fs.writeFileSync(file, String(texto), 'utf8');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error creando plantilla' });
+  }
+});
+
+// Actualizar plantilla
+app.put('/api/templates/:name', (req, res) => {
+  try {
+    const { texto } = req.body || {};
+    const name = sanitizeName(req.params.name);
+    if (!texto) return res.status(400).json({ error: 'texto es requerido' });
+    ensureTemplatesDir();
+    const file = path.join(TEMPLATES_DIR, name + '.txt');
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Plantilla no encontrada' });
+    fs.writeFileSync(file, String(texto), 'utf8');
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error actualizando plantilla' });
+  }
+});
+
+// Eliminar plantilla
+app.delete('/api/templates/:name', (req, res) => {
+  try {
+    const name = sanitizeName(req.params.name);
+    ensureTemplatesDir();
+    const file = path.join(TEMPLATES_DIR, name + '.txt');
+    if (!fs.existsSync(file)) return res.status(404).json({ error: 'Plantilla no encontrada' });
+    fs.unlinkSync(file);
+    res.json({ success: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Error eliminando plantilla' });
   }
 });
 
@@ -110,17 +211,48 @@ const uploadContacts = multer({
 
 // Directorio de uploads garantizado arriba
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
 // Variables globales
 let client;
 let qrCodeString = null;
 let isReady = false;
+let isInitializing = false; // Flag para evitar reinicios concurrentes
 
-// Ruta donde se guarda la sesión de whatsapp-web.js (LocalAuth)
-const SESSION_DIR = path.join(DATA_DIR, '.wwebjs_auth');
+
+// =============================
+// Autenticación deshabilitada (sin base de datos)
+// Exponemos endpoints mínimos de login/register para que el frontend funcione.
+// Cuando quieras activar Postgres o Supabase, restaura las rutas reales.
+// =============================
+
+app.post('/api/register', (req, res) => {
+  try {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ success: false, message: 'Email y contraseña requeridos.' });
+    }
+    // Registro simulado exitoso
+    return res.json({ success: true, message: 'Registro simulado exitoso.' });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Error interno en registro simulado.' });
+  }
+});
+
+app.post('/api/login', (req, res) => {
+  try {
+    const { email, username } = req.body || {};
+    // Login simulado exitoso
+    return res.json({
+      success: true,
+      user: {
+        id: 1,
+        email: email || `${username || 'user'}@example.com`,
+        suscripcion_activa: false
+      }
+    });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: 'Error interno en login simulado.' });
+  }
+});
 
 // Normaliza números a chatId válido de WhatsApp (NNNN@c.us)
 function normalizeChatId(to) {
@@ -212,103 +344,284 @@ async function limpiarSesion(retries = 5, delayMs = 1000) {
   return false;
 }
 
-// Inicializar cliente WhatsApp
-const initializeWhatsApp = () => {
-  console.log('Inicializando WhatsApp...');
-
-  // Si existe un cliente anterior, destruirlo para liberar locks
-  if (client) {
+// Función para limpiar también el caché de whatsapp-web.js
+async function limpiarCache() {
+  const CACHE_DIR = path.join(__dirname, '.wwebjs_cache');
+  if (fs.existsSync(CACHE_DIR)) {
     try {
-      client.destroy();
-    } catch (e) {
-      console.warn('No se pudo destruir cliente anterior:', e.message);
+      await fs.promises.rm(CACHE_DIR, { recursive: true, force: true });
+      console.log('🧹 Caché de WhatsApp Web eliminado.');
+      return true;
+    } catch (err) {
+      console.warn('No se pudo eliminar el caché:', err.message);
+      return false;
     }
   }
+  return true;
+}
 
-  let newClient;
-  try {
-  console.log('Inicializando WhatsApp...');
-  
-    const clientOptions = {
-    authStrategy: new LocalAuth({
-      dataPath: SESSION_DIR,
-      clientId: 'whatsapp-client'
-    }),
-    puppeteer: {
-        executablePath: puppeteerExecutablePath || undefined,
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--no-first-run',
-        '--no-zygote',
-        '--single-process',
-        '--disable-gpu'
-      ]
+// Función para limpiar sesión en ubicación alternativa (cuando se ejecuta desde Electron)
+async function limpiarSesionAlternativa(retries = 5, delayMs = 1000) {
+  // Buscar la sesión en la ubicación de datos de Electron
+  const alternativeSessionDirs = [
+    // Ubicación cuando se ejecuta desde Electron
+    process.env.APISKY_DATA_DIR ? path.join(process.env.APISKY_DATA_DIR, '.wwebjs_auth') : null,
+    // Ubicaciones comunes de AppData
+    path.join(os.homedir(), 'AppData', 'Roaming', 'Apisky', 'apisky-data', '.wwebjs_auth'),
+    path.join(os.homedir(), 'AppData', 'Roaming', 'Apisky', '.wwebjs_auth'),
+    // Ubicación por defecto
+    path.join(DEFAULT_DATA_DIR, '.wwebjs_auth')
+  ].filter(Boolean);
+
+  for (const sessionDir of alternativeSessionDirs) {
+    if (fs.existsSync(sessionDir) && sessionDir !== SESSION_DIR) {
+      console.log(`🔍 Limpiando sesión alternativa en: ${sessionDir}`);
+      
+      for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+          await fs.promises.rm(sessionDir, { recursive: true, force: true });
+          console.log(`⚠️  Sesión alternativa eliminada: ${sessionDir}`);
+          break;
+        } catch (err) {
+          if (err.code === 'EBUSY' && attempt < retries) {
+            console.warn(`Intento ${attempt}/${retries} en sesión alternativa: directorio bloqueado. Reintentando en ${delayMs}ms...`);
+            await new Promise(res => setTimeout(res, delayMs));
+            continue;
+          }
+          console.warn(`No se pudo eliminar sesión alternativa ${sessionDir}:`, err.message);
+          break;
+        }
+      }
     }
-  };
+  }
+  return true;
+}
 
-    newClient = new Client(clientOptions);
+// Función para limpieza completa automática cuando hay problemas
+async function limpiezaCompleta() {
+  console.log('🔧 Iniciando limpieza completa automática...');
+  
+  // 1. Destruir cliente si existe
+  if (client) {
+    try {
+      await client.destroy();
+      console.log('📱 Cliente WhatsApp destruido.');
+    } catch (e) {
+      console.warn('⚠️  Error al destruir cliente:', e.message);
+    }
+  }
+  
+  // 2. Limpiar sesión y caché (tanto en ubicación actual como en data dir)
+  await limpiarSesion();
+  await limpiarSesionAlternativa();
+  await limpiarCache();
+  
+  // 3. Resetear variables
+  client = null;
+  isReady = false;
+  isInitializing = false;
+  qrCodeString = null;
+  
+  console.log('✅ Limpieza completa finalizada. Reiniciando WhatsApp...');
+  
+  // 4. Reiniciar después de un breve delay
+  setTimeout(initializeWhatsApp, 2000);
+}
 
-    // Asignar el cliente sólo si se creó sin errores
-    client = newClient;
+// Inicializar cliente WhatsApp
+const initializeWhatsApp = async () => {
+  if (isInitializing) {
+    console.log('Ya hay una inicialización de WhatsApp en curso.');
+    return;
+  }
+  isInitializing = true;
+  console.log('Inicializando WhatsApp...');
+  qrCodeString = null;
+  isReady = false;
+
+  try {
+    // Si existe un cliente anterior, destruirlo para liberar locks
+    if (client) {
+      try {
+        await client.destroy();
+        console.log('[LOG] Cliente anterior destruido correctamente.');
+      } catch (e) {
+        console.warn('[WARN] No se pudo destruir cliente anterior:', e.message);
+      }
+    }
+
+    // Configuración especial para apps empaquetadas
+    const isPackaged = process.env.NODE_ENV === 'production' && process.env.ELECTRON_RUN_AS_NODE;
+    
+    const clientOptions = {
+      authStrategy: new LocalAuth({
+        dataPath: SESSION_DIR,
+        clientId: 'whatsapp-client'
+      }),
+      puppeteer: {
+        executablePath: puppeteerExecutablePath || undefined,
+        headless: true,
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-accelerated-2d-canvas',
+          '--no-first-run',
+          '--no-zygote',
+          '--single-process',
+          '--disable-gpu',
+          // Args adicionales para apps empaquetadas
+          ...(isPackaged ? [
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
+            '--disable-background-timer-throttling',
+            '--disable-renderer-backgrounding',
+            '--disable-backgrounding-occluded-windows'
+          ] : [])
+        ]
+      }
+    };
+    
+    console.log('[DEBUG] Cliente empaquetado:', isPackaged);
+    console.log('[DEBUG] Puppeteer executable:', clientOptions.puppeteer.executablePath || 'Por defecto');
+
+    client = new Client(clientOptions);
 
     client.on('qr', (qr) => {
-    qrCodeString = qr;
-    qrcode.generate(qr, { small: true });
-    console.log('Escanea este QR con WhatsApp para iniciar sesión');
-  });
+      qrCodeString = qr;
+      qrcode.generate(qr, { small: true });
+      console.log('[EVENT] QR recibido. Escanea este QR con WhatsApp para iniciar sesión');
+    });
 
-  client.on('ready', () => {
-    isReady = true;
-    console.log('WhatsApp Web conectado y listo!');
-  });
+    client.on('ready', () => {
+      isReady = true;
+      isInitializing = false; // Marcar como finalizado
+      console.log('[EVENT] WhatsApp Web conectado y listo!');
+    });
 
-  client.on('disconnected', async (reason) => {
-    isReady = false;
-    console.log('Cliente desconectado:', reason);
-    // Limpiar sesión y volver a inicializar después de 5 segundos
-    await limpiarSesion();
-    setTimeout(initializeWhatsApp, 5000);
-  });
+    client.on('disconnected', async (reason) => {
+      isReady = false;
+      console.log('[EVENT] Cliente desconectado:', reason);
+      
+      // Si la desconexión es por problemas de sesión, hacer limpieza completa
+      if (['LOGOUT', 'CONFLICT', 'UNPAIRED', 'UNPAIRED_IDLE'].includes(reason)) {
+        await limpiezaCompleta();
+      } else {
+        // Para otras desconexiones, solo limpiar sesión
+        await limpiarSesion();
+        setTimeout(initializeWhatsApp, 5000);
+      }
+    });
 
-  // Manejar cambios de estado
-  client.on('change_state', async (state) => {
-    console.log('Estado de conexión cambiado a:', state);
-    if (['CONFLICT', 'UNPAIRED', 'UNPAIRED_IDLE'].includes(state)) {
-      console.log('Sesión cerrada desde el dispositivo. Reiniciando...');
-      await limpiarSesion();
-      // No salir del proceso, mejor reiniciar
-      setTimeout(initializeWhatsApp, 1000);
-    }
-  });
+    client.on('change_state', async (state) => {
+      console.log('[EVENT] Estado de conexión cambiado a:', state);
+      if (['CONFLICT', 'UNPAIRED', 'UNPAIRED_IDLE'].includes(state)) {
+        console.log('[EVENT] Sesión cerrada desde el dispositivo. Reiniciando...');
+        await limpiarSesion();
+        setTimeout(initializeWhatsApp, 1000);
+      }
+    });
 
     client.on('auth_failure', async (msg) => {
-    console.error('Error de autenticación:', msg);
-    await limpiarSesion();
-    console.log('Sesión inválida eliminada. Reiniciando...');
-    setTimeout(initializeWhatsApp, 5000);
-  });
+      console.error('[EVENT] Error de autenticación:', msg);
+      await limpiezaCompleta();
+    });
 
-  // Inicializar con manejo de errores
-    client.initialize().catch(err => {
-    console.error('Error al inicializar WhatsApp:', err);
-    // Reintentar después de 5 segundos
-    setTimeout(initializeWhatsApp, 5000);
-  });
+    client.on('loading_screen', (percent, message) => {
+      console.log(`[EVENT] Cargando WhatsApp Web: ${percent}% - ${message}`);
+      
+      // Si llega al 100% y después de 30 segundos no está listo, forzar limpieza
+      if (percent === 100) {
+        setTimeout(() => {
+          if (!isReady && !isInitializing) {
+            console.warn('⏰ Cliente atascado al 100% detectado. Iniciando limpieza...');
+            limpiezaCompleta();
+          }
+        }, 30000); // 30 segundos después del 100%
+      }
+    });
+
+    // client.on('message', (msg) => {
+    //   console.log('[EVENT] Mensaje recibido:', msg.body);
+    // });
+
+    client.on('authenticated', () => {
+      console.log('[EVENT] Cliente autenticado correctamente.');
+      
+      // WORKAROUND: En apps empaquetadas, forzar 'ready' después de autenticación
+      if (isPackaged) {
+        setTimeout(() => {
+          if (!isReady) {
+            console.warn('🔧 WORKAROUND: Forzando evento ready en app empaquetada...');
+            isReady = true;
+            isInitializing = false;
+            console.log('[EVENT] WhatsApp Web conectado y listo! (FORZADO)');
+          }
+        }, 5000); // 5 segundos después de autenticación
+      } else {
+        // Solo para desarrollo: timeout de limpieza
+        setTimeout(() => {
+          if (!isReady) {
+            console.warn('🚨 PROBLEMA DETECTADO: Cliente autenticado pero no ready después de 15 segundos');
+            console.warn('🔧 Iniciando limpieza automática...');
+            limpiezaCompleta();
+          }
+        }, 15000);
+      }
+    });
+
+    client.on('auth_failure', (msg) => {
+      console.error('[EVENT] Fallo de autenticación:', msg);
+    });
+
+    client.on('ws_session', () => {
+      console.log('[EVENT] Sesión WebSocket establecida.');
+    });
+
+    client.on('ws_close', () => {
+      console.log('[EVENT] WebSocket cerrado.');
+    });
+
+    client.on('ws_pong', () => {
+      console.log('[EVENT] WebSocket pong recibido.');
+    });
+
+    await client.initialize();
+    console.log('[LOG] Llamada a client.initialize() finalizada. Esperando eventos...');
+    
+    // Timeout para detectar si el cliente se queda atascado
+    const timeoutId = setTimeout(async () => {
+      if (!isReady && isInitializing) {
+        console.warn('⏰ Cliente atascado detectado. Iniciando limpieza automática...');
+        await limpiezaCompleta();
+      }
+    }, 120000); // 2 minutos timeout
+    
+    // Limpiar timeout si el cliente se conecta correctamente
+    const originalReadyHandler = client.listenerCount('ready') > 0 ? 
+      client.listeners('ready')[0] : null;
+    
+    if (originalReadyHandler) {
+      client.removeListener('ready', originalReadyHandler);
+    }
+    
+    client.on('ready', () => {
+      clearTimeout(timeoutId);
+      isReady = true;
+      isInitializing = false;
+      console.log('[EVENT] WhatsApp Web conectado y listo!');
+    });
+
   } catch (err) {
-    // Manejar errores de creación del cliente, por ejemplo EBUSY en Windows
-    console.error('Error creando cliente WhatsApp:', err);
-
-    if (err.message && err.message.includes('EBUSY')) {
-      console.log('El directorio de sesión está bloqueado. Intentando limpiar y reintentar...');
-      limpiarSesion().then(() => {
-        setTimeout(initializeWhatsApp, 2000);
-      });
+    console.error('[ERROR] Error al inicializar WhatsApp:', err);
+    isInitializing = false; // Permitir reintentos
+    
+    // Para errores críticos, hacer limpieza completa
+    if (err.message.includes('EBUSY') || err.message.includes('Protocol error')) {
+      console.log('[ERROR] Error crítico detectado. Iniciando limpieza completa...');
+      await limpiezaCompleta();
     } else {
-      // Reintentar genérico
+      // Reintentar después de 5 segundos
       setTimeout(initializeWhatsApp, 5000);
     }
   }
@@ -327,9 +640,28 @@ app.get('/api/wa-qr', (req, res) => {
     }
 });
 
+// Endpoint de imagen PNG del QR (evita depender de servicios externos)
+app.get('/api/wa-qr.png', async (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  try {
+    if (!qrCodeString) return res.status(404).send('QR no disponible');
+    const buffer = await QRCode.toBuffer(qrCodeString, { type: 'png', scale: 8 });
+    res.type('png').send(buffer);
+  } catch (e) {
+    res.status(500).send('Error generando QR');
+  }
+});
+
 // Endpoint para ver estado
 app.get('/api/wa-status', (req, res) => {
-    res.json({ ready: isReady });
+    // En apps empaquetadas, verificar si el cliente realmente puede enviar mensajes
+    const actuallyReady = isReady && client && typeof client.sendMessage === 'function';
+    res.json({ 
+        ready: actuallyReady,
+        isPackaged: process.env.NODE_ENV === 'production' && process.env.ELECTRON_RUN_AS_NODE,
+        hasClient: !!client,
+        isInitializing
+    });
 });
 
 // Endpoint para enviar mensaje
@@ -426,13 +758,13 @@ app.post('/api/wa-logout', async (req, res) => {
     // 3. Reiniciar el cliente
     initializeWhatsApp();
     
-    res.json({ 
+    res.json({
       success: true, 
       message: 'Sesión cerrada correctamente. Escanea el nuevo QR para continuar.' 
     });
   } catch (err) {
     console.error('Error en wa-logout:', err);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false, 
       message: 'Error al cerrar sesión: ' + (err.message || 'Error desconocido')
     });
@@ -448,6 +780,27 @@ app.post('/api/forzar-reinicio', async (req, res) => {
     console.error('Error en forzar-reinicio:', error);
     res.status(500).json({ success: false, message: 'Error al forzar el reinicio' });
   }
+});
+
+// Endpoint para limpieza completa automática (útil para el frontend)
+app.post('/api/limpiar-sesion', async (req, res) => {
+  try {
+    await limpiezaCompleta();
+    res.json({ success: true, message: 'Limpieza completa realizada. Escaneando nuevo QR...' });
+  } catch (error) {
+    console.error('Error en limpieza completa:', error);
+    res.status(500).json({ success: false, message: 'Error en la limpieza' });
+  }
+});
+
+// Endpoint para verificar si el cliente está atascado
+app.get('/api/wa-debug', (req, res) => {
+  res.json({ 
+    isReady, 
+    isInitializing, 
+    hasQR: !!qrCodeString,
+    timestamp: new Date().toISOString()
+  });
 });
 
 // Endpoint para obtener contactos de WhatsApp
@@ -572,7 +925,7 @@ app.get('/api/wa-contacts', async (req, res) => {
 // Objeto para almacenar los segmentos de los contactos (en producción, usa una base de datos)
 const contactSegments = {};
 // Almacenamiento simple de contactos importados
-const CONTACTS_FILE = path.join(__dirname, 'contacts.json');
+const CONTACTS_FILE = path.join(DATA_DIR, 'contacts.json');
 global.importedContacts = [];
 function saveContacts() {
   try { fs.writeFileSync(CONTACTS_FILE, JSON.stringify(global.importedContacts, null, 2)); } catch {}
@@ -601,7 +954,7 @@ app.post('/api/update-segments', express.json(), (req, res) => {
     Object.assign(contactSegments, segments);
     
     // Guardar en un archivo para persistencia (en producción, usa una base de datos)
-    fs.writeFileSync('contactSegments.json', JSON.stringify(contactSegments, null, 2));
+    fs.writeFileSync(path.join(DATA_DIR, 'contactSegments.json'), JSON.stringify(contactSegments, null, 2));
     
     res.json({ success: true, message: 'Segmentos actualizados correctamente' });
   } catch (err) {
@@ -768,9 +1121,9 @@ async function runQueue() {
       } else {
         await client.sendMessage(chatId, text);
       }
-      addHistory({ to: chatId, status: 'sent', type: media ? 'image' : 'text' });
+      addHistory({ to: chatId, status: 'sent', type: media ? 'image' : 'text', message: text || caption || 'Imagen' });
     } catch (e) {
-      addHistory({ to: chatId, status: 'failed', error: e.message });
+      addHistory({ to: chatId, status: 'failed', error: e.message, type: media ? 'image' : 'text', message: text || caption || 'Imagen' });
     }
     if (delayMs && delayMs > 0) {
       await new Promise(r => setTimeout(r, delayMs));
@@ -842,9 +1195,9 @@ app.post('/api/send-bulk-image', uploadImage.single('image'), async (req, res) =
 });
 
 // Cargar segmentos guardados al iniciar el servidor
-if (fs.existsSync('contactSegments.json')) {
+if (fs.existsSync(path.join(DATA_DIR, 'contactSegments.json'))) {
   try {
-    const data = fs.readFileSync('contactSegments.json', 'utf8');
+    const data = fs.readFileSync(path.join(DATA_DIR, 'contactSegments.json'), 'utf8');
     Object.assign(contactSegments, JSON.parse(data));
     console.log('Segmentos de contactos cargados correctamente');
   } catch (err) {
@@ -867,15 +1220,19 @@ app.listen(PORT, () => {
 });
 
 // Manejar cierre de proceso
-process.on('SIGINT', async () => {
-  console.log('\nCerrando servidor...');
+async function gracefulShutdown() {
+  console.log('\nCerrando servidor de forma ordenada...');
   try {
     if (client) {
       await client.destroy();
+      console.log('Cliente de WhatsApp destruido.');
     }
-    process.exit(0);
   } catch (err) {
-    console.error('Error al cerrar el cliente:', err);
-    process.exit(1);
+    console.error('Error durante el cierre del cliente:', err);
+  } finally {
+    process.exit(0);
   }
-});
+}
+
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);

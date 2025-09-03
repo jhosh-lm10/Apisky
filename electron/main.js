@@ -31,7 +31,7 @@ function createWindow() {
     mainWindow.loadURL('http://localhost:5173');
     mainWindow.webContents.openDevTools();
   } else {
-    mainWindow.loadFile(path.join(__dirname, '../frontend/dist/index.html'));
+    mainWindow.loadFile(path.join(app.getAppPath(), 'frontend', 'dist', 'index.html'));
   }
 
   mainWindow.once('ready-to-show', () => {
@@ -44,36 +44,43 @@ function createWindow() {
 }
 
 function startBackend() {
-  let backendPath = path.join(__dirname, '../Backend');
-  let backendEntry = path.join(backendPath, 'index.js');
-  // Si está empaquetado, intentar usar rutas relativas a resources
-  if (!isDev) {
-    const resourcesPath = process.resourcesPath; // .../win-unpacked/resources
-    const unpackedBackend = path.join(resourcesPath, 'app.asar.unpacked', 'Backend');
-    const unpackedEntry = path.join(unpackedBackend, 'index.js');
-    if (fs.existsSync(unpackedEntry)) {
-      backendPath = unpackedBackend;
-      backendEntry = unpackedEntry;
-    } else if (backendEntry.includes('app.asar')) {
-      const replaced = backendEntry.replace('app.asar', 'app.asar.unpacked');
-      if (fs.existsSync(replaced)) {
-        backendEntry = replaced;
-        backendPath = path.dirname(replaced);
-      }
-    }
+  let backendPath;
+
+  if (isDev) {
+    // En desarrollo, la ruta es relativa a la carpeta 'electron'
+    backendPath = path.join(__dirname, '..', 'Backend');
+  } else {
+    // En producción, el backend está desempaquetado en 'app.asar.unpacked'
+    backendPath = path.join(process.resourcesPath, 'app.asar.unpacked', 'Backend');
+  }
+
+  const backendEntry = path.join(backendPath, 'index.js');
+
+  console.log(`Ruta del backend: ${backendPath}`);
+  console.log(`Punto de entrada del backend: ${backendEntry}`);
+
+  if (!fs.existsSync(backendEntry)) {
+    dialog.showErrorBox(
+      'Error Crítico: No se encuentra el Backend',
+      `No se pudo encontrar el archivo de inicio del backend en: ${backendEntry}`
+    );
+    app.quit();
+    return;
   }
 
   // Directorio de datos escribible para uploads y sesión de WhatsApp
   const userDataPath = app.getPath('userData');
   const dataDir = path.join(userDataPath, 'apisky-data');
-  try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+  try { fs.mkdirSync(dataDir, { recursive: true }); } catch {} // No need to escape this, it's a valid JS string literal
   const logFile = path.join(dataDir, 'backend.log');
   let logStream;
-  try { logStream = fs.createWriteStream(logFile, { flags: 'a' }); } catch {}
+  try { logStream = fs.createWriteStream(logFile, { flags: 'a' }); } catch {} // No need to escape this, it's a valid JS string literal
   const writeLog = (msg) => {
-    try { if (logStream) logStream.write(String(msg)); } catch {}
+    try { if (logStream) logStream.write(String(msg)); } catch {} // No need to escape this, it's a valid JS string literal
   };
-  writeLog(`\n===== Inicio backend: ${new Date().toISOString()} =====\n`);
+  writeLog(`
+===== Inicio backend: ${new Date().toISOString()} =====
+`);
 
   const spawnElectronNode = () => spawn(process.execPath, [backendEntry], {
     cwd: backendPath,
@@ -101,12 +108,15 @@ function startBackend() {
 
   const runInProcess = () => {
     try {
-      writeLog(`\n[INPROC] Cargando backend en el proceso principal...\n`);
+      writeLog(`
+[INPROC] Cargando backend en el proceso principal...
+`);
       process.env.APISKY_DATA_DIR = dataDir;
       process.env.NODE_ENV = isDev ? 'development' : 'production';
       // Cargar backend directamente
       require(backendEntry);
-      writeLog(`[INPROC] Backend cargado en-proceso.\n`);
+      writeLog(`[INPROC] Backend cargado en-proceso.
+`);
       return true;
     } catch (e) {
       writeLog(`[INPROC_ERR] ${e?.stack || e}`);
@@ -130,15 +140,20 @@ function startBackend() {
 
   backendProcess.on('close', (code) => {
     console.log(`Backend process exited with code ${code}`);
-    writeLog(`\n===== Backend cerrado con código ${code} =====\n`);
+    writeLog(`
+===== Backend cerrado con código ${code} =====
+`);
   });
 
   backendProcess.on('error', (error) => {
     console.error('Failed to start backend:', error);
     writeLog(`[SPAWN_ERR] ${error?.stack || error}`);
+    dialog.showMessageBox({ title: 'Debug', message: `Spawn Error: ${error?.stack || error}` });
     // Fallback SIEMPRE con Node del sistema si hay error
     try {
-      writeLog(`\n[SPAWN_INFO] Intentando fallback con 'node' del sistema...\n`);
+      writeLog(`
+[SPAWN_INFO] Intentando fallback con 'node' del sistema...
+`);
       const fb = spawnSystemNode();
       backendProcess = fb;
       fb.stdout.on('data', (data) => {
@@ -153,7 +168,9 @@ function startBackend() {
       });
       fb.on('close', (code) => {
         console.log(`Backend(FB) process exited with code ${code}`);
-        writeLog(`\n===== Backend(FB) cerrado con código ${code} =====\n`);
+        writeLog(`
+===== Backend(FB) cerrado con código ${code} =====
+`);
         // Si también falla el proceso fallback, intentar en-proceso
         if (code !== 0) {
           runInProcess();
@@ -168,8 +185,10 @@ function startBackend() {
 }
 
 function stopBackend() {
-  if (backendProcess) {
-    backendProcess.kill();
+  if (backendProcess && !backendProcess.killed) {
+    console.log('Enviando señal de cierre al backend...');
+    // Enviar SIGINT para un cierre ordenado (compatible con el handler en index.js)
+    backendProcess.kill('SIGINT'); 
     backendProcess = null;
   }
 }

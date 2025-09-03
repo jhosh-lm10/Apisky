@@ -27,53 +27,78 @@ import { useContacts } from './hooks/useContacts'
 import { useMessages, useWhatsApp } from './hooks/useMessages'
 import { useStats } from './hooks/useStats'
 import { useConfig } from './hooks/useConfig'
-import { authService, sendWhatsAppMessage } from './services/api'
+import { authService, sendWhatsAppMessage, API_BASE } from './services/api'
 import WaQr from './components/ui/waqr'
 
-const PLANTILLAS_KEY = 'apisky_plantillas';
-function getPlantillasFromStorage() {
-  try {
-    return JSON.parse(localStorage.getItem(PLANTILLAS_KEY)) || [];
-  } catch {
-    return [];
-  }
-}
-function savePlantillasToStorage(plantillas) {
-  localStorage.setItem(PLANTILLAS_KEY, JSON.stringify(plantillas));
-}
+// Persistencia de plantillas ahora se hace en backend vía /api/templates
+// Cache simple en memoria para reemplazos rápidos al enviar mensajes
+function getPlantillasFromStorage() { return window.__plantillas || []; }
 
 function PlantillasSection() {
-  const [plantillas, setPlantillas] = useState(getPlantillasFromStorage());
+  const [plantillas, setPlantillas] = useState([]);
   const [nombre, setNombre] = useState('');
   const [texto, setTexto] = useState('');
   const [editIdx, setEditIdx] = useState(null);
   const [error, setError] = useState('');
 
+  // Cargar plantillas desde backend
   useEffect(() => {
-    savePlantillasToStorage(plantillas);
-  }, [plantillas]);
+    const load = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/templates`);
+        if (!res.ok) throw new Error('No se pudieron cargar las plantillas');
+        const list = await res.json();
+        setPlantillas(list);
+        window.__plantillas = list;
+      } catch (e) {
+        console.error('Error cargando plantillas', e);
+      }
+    };
+    load();
+  }, []);
 
-  const handleGuardar = (e) => {
+  const handleGuardar = async (e) => {
     e.preventDefault();
     setError('');
-    if (!nombre.trim() || !texto.trim()) {
+    const nom = nombre.trim();
+    const txt = texto;
+    if (!nom || !txt.trim()) {
       setError('Completa ambos campos.');
       return;
     }
-    if (editIdx === null) {
-      // Crear
-      if (plantillas.some(p => p.nombre === nombre.trim())) {
-        setError('El nombre de plantilla ya existe.');
-        return;
+    try {
+      if (editIdx === null) {
+        // Crear
+        const res = await fetch(`${API_BASE}/api/templates`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre: nom, texto: txt })
+        });
+        if (res.status === 409) { setError('El nombre de plantilla ya existe.'); return; }
+        if (!res.ok) throw new Error('Error creando plantilla');
+        const updated = [...plantillas, { nombre: nom, texto: txt }];
+        setPlantillas(updated);
+        window.__plantillas = updated;
+      } else {
+        // Editar
+        const target = plantillas[editIdx];
+        const res = await fetch(`${API_BASE}/api/templates/${encodeURIComponent(target.nombre)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ texto: txt })
+        });
+        if (!res.ok) throw new Error('Error actualizando plantilla');
+        const updated = plantillas.map((p, i) => i === editIdx ? { nombre: target.nombre, texto: txt } : p);
+        setPlantillas(updated);
+        window.__plantillas = updated;
       }
-      setPlantillas([...plantillas, { nombre: nombre.trim(), texto }]);
-    } else {
-      // Editar
-      setPlantillas(plantillas.map((p, i) => i === editIdx ? { nombre: nombre.trim(), texto } : p));
+      setNombre('');
+      setTexto('');
+      setEditIdx(null);
+    } catch (err) {
+      console.error(err);
+      setError(err.message || 'Error guardando plantilla');
     }
-    setNombre('');
-    setTexto('');
-    setEditIdx(null);
   };
   const handleEditar = (idx) => {
     setEditIdx(idx);
@@ -81,12 +106,22 @@ function PlantillasSection() {
     setTexto(plantillas[idx].texto);
     setError('');
   };
-  const handleEliminar = (idx) => {
-    if (window.confirm('¿Eliminar esta plantilla?')) {
-      setPlantillas(plantillas.filter((_, i) => i !== idx));
+  const handleEliminar = async (idx) => {
+    if (!window.confirm('¿Eliminar esta plantilla?')) return;
+    try {
+      const target = plantillas[idx];
+      const res = await fetch(`${API_BASE}/api/templates/${encodeURIComponent(target.nombre)}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error('Error eliminando plantilla');
+      const updated = plantillas.filter((_, i) => i !== idx);
+      setPlantillas(updated);
+      window.__plantillas = updated;
       setNombre('');
       setTexto('');
       setEditIdx(null);
+      setError('');
+    } catch (e) {
+      console.error(e);
+      alert('No se pudo eliminar la plantilla');
     }
   };
   const handleCancelar = () => {
@@ -158,14 +193,18 @@ function PlantillasSection() {
 }
 
 function App() {
-  const [isLoggedIn, setIsLoggedIn] = useState(false)
+  const [isLoggedIn, setIsLoggedIn] = useState(true)
   const [currentSection, setCurrentSection] = useState('mensajes')
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
   const [loginData, setLoginData] = useState({ username: '', password: '' })
   const [loginLoading, setLoginLoading] = useState(false)
   const [loginError, setLoginError] = useState('')
-  const [videoLoaded, setVideoLoaded] = useState(false)
-  const videoRef = useRef(null)
+  const [showRegister, setShowRegister] = useState(false)
+  const [registerData, setRegisterData] = useState({ email: '', password: '' })
+  const [registerLoading, setRegisterLoading] = useState(false)
+  const [registerError, setRegisterError] = useState('')
+  const [registerSuccess, setRegisterSuccess] = useState(false)
+
 
   // Estado global para mensajes programados y enviados
   const [scheduledMessages, setScheduledMessages] = useState([])
@@ -191,28 +230,71 @@ function App() {
   }
 
   const handleLogin = async (e) => {
-    e.preventDefault()
+    e.preventDefault();
     if (!loginData.username || !loginData.password) {
-      setLoginError('Por favor ingresa usuario y contraseña')
-      return
+      setLoginError('Por favor ingresa usuario y contraseña');
+      return;
     }
-
-    setLoginLoading(true)
-    setLoginError('')
-
+    setLoginLoading(true);
+    setLoginError('');
     try {
-      const response = await authService.login(loginData)
+      const response = await authService.login(loginData);
       if (response.success) {
-        setIsLoggedIn(true)
-        setCurrentSection('mensajes')
-        setLoginError('')
+        setIsLoggedIn(true);
+        setCurrentSection('mensajes');
+        setLoginError('');
+      } else {
+        setLoginError(response.message || 'Error al iniciar sesión.');
       }
     } catch (error) {
-      setLoginError('Error al iniciar sesión. Verifica tus credenciales.')
+      // Si el error es un objeto con message, mostrarlo
+      if (error && error.message) {
+        setLoginError(error.message);
+      } else if (typeof error === 'string') {
+        setLoginError(error);
+      } else {
+        setLoginError('Error al iniciar sesión. Verifica tus credenciales.');
+      }
     } finally {
-      setLoginLoading(false)
+      setLoginLoading(false);
     }
-  }
+  };
+
+  const handleRegister = async (e) => {
+    e.preventDefault();
+    setRegisterError('');
+    setRegisterSuccess(false);
+    setRegisterLoading(true);
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: registerData.email, password: registerData.password })
+      });
+      let data = {};
+      try { data = await res.json(); } catch {}
+      if (res.ok) {
+        setRegisterSuccess(true);
+        // Auto-login tras registro
+        setLoginData(registerData);
+        setShowRegister(false);
+        setTimeout(() => handleLogin({ preventDefault: () => {} }), 500);
+      } else {
+        // Mostrar mensaje específico del backend si existe
+        setRegisterError(data.message || (data.error ? data.error : 'Error en el registro'));
+      }
+    } catch (err) {
+      if (err && err.message) {
+        setRegisterError(err.message);
+      } else if (typeof err === 'string') {
+        setRegisterError(err);
+      } else {
+        setRegisterError('Error de red');
+      }
+    } finally {
+      setRegisterLoading(false);
+    }
+  };
 
   const [logoutError, setLogoutError] = useState(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
@@ -230,10 +312,7 @@ function App() {
       // Mostrar mensaje de éxito
       alert(result.message);
       
-      // Limpiar estado
-      setIsLoggedIn(false);
-      setLoginData({ username: '', password: '' });
-      setCurrentSection('mensajes');
+      // Mantener la sesión de app (sin login). Solo cerrar menú si estaba abierto
       setIsMobileMenuOpen(false);
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
@@ -251,33 +330,13 @@ function App() {
     { id: 'plantillas', label: 'Plantillas', icon: BarChart3 },
   ]
 
-  if (!isLoggedIn) {
+  // Login deshabilitado temporalmente: siempre mostrar la app principal
+  if (false) {
     return (
       <div className="relative min-h-screen flex items-center justify-center p-4 overflow-hidden">
-        {/* Fondo: video con zoom/tilt suave + poster fallback */}
-        <div className="absolute inset-0 overflow-hidden login-video">
-          <video
-            ref={videoRef}
-            className="w-full h-full object-cover login-bg-zoom"
-            autoPlay
-            loop
-            muted
-            playsInline
-            preload="auto"
-            poster={`${import.meta.env.BASE_URL}img/bg.jpg`}
-            controls={false}
-            controlsList="nodownload nofullscreen noplaybackrate"
-            disablePictureInPicture
-            onLoadedData={() => setVideoLoaded(true)}
-            onError={() => setVideoLoaded(true)} // Fallback si video falla
-          >
-            <source src={`${import.meta.env.BASE_URL}video/bg.webm`} type="video/webm" />
-            <source src={`${import.meta.env.BASE_URL}video/bg.mp4`} type="video/mp4" />
-          </video>
-        </div>
-        {/* Poster estático (se muestra si reduce motion, pantallas pequeñas, o mientras carga video) */}
+        {/* Fondo: imagen con zoom/tilt suave */}
         <div
-          className={`absolute inset-0 login-poster transition-opacity duration-500 ${videoLoaded ? 'opacity-0' : 'opacity-100'}`}
+          className="absolute inset-0 login-bg-zoom"
           style={{
             backgroundImage: `url(${import.meta.env.BASE_URL}img/bg.jpg)`,
             backgroundSize: 'cover',
@@ -301,68 +360,149 @@ function App() {
             <div className="mx-auto mb-4 w-16 h-16 bg-white/20 border border-white/30 rounded-full flex items-center justify-center backdrop-blur-sm">
               <Send className="w-8 h-8 text-white" />
             </div>
-            <CardTitle className="text-2xl font-bold text-white">PIsky</CardTitle>
+            <CardTitle className="text-2xl font-bold text-white">piSKY</CardTitle>
             <CardDescription className="text-white/80">
               Gestión de mensajes promocionales
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <form onSubmit={handleLogin} className="space-y-4">
-              {loginError && (
-                <Alert variant="destructive">
-                  <AlertCircle className="h-4 w-4" />
-                  <AlertDescription>{loginError}</AlertDescription>
-                </Alert>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="username">Usuario</Label>
-                 <Input
-                  id="username"
-                  type="text"
-                  placeholder="Ingresa tu usuario"
-                  value={loginData.username}
-                  onChange={(e) => setLoginData({...loginData, username: e.target.value})}
-                   className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
-                   autoComplete="username"
-                  disabled={loginLoading}
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="password">Contraseña</Label>
-                 <Input
-                  id="password"
-                  type="password"
-                  placeholder="Ingresa tu contraseña"
-                  value={loginData.password}
-                  onChange={(e) => setLoginData({...loginData, password: e.target.value})}
-                   className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
-                   autoComplete="current-password"
-                  disabled={loginLoading}
-                  required
-                />
-              </div>
-              <div className="flex items-center text-xs text-white/80">
-                <label className="flex items-center gap-2 select-none">
-                  <input type="checkbox" className="login-checkbox" />
-                  Recordarme
-                </label>
-              </div>
-              <Button 
-                type="submit" 
-                className="w-full h-11 bg-transparent hover:bg-white/10 border border-white/70 text-white shadow-[0_0_0_0] backdrop-blur-sm rounded-full transition-colors"
-                disabled={loginLoading}
-              >
-                {loginLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Iniciando sesión...
-                  </>
-                ) : (
-                  'Iniciar sesión'
+            {!showRegister ? (
+              <form onSubmit={handleLogin} className="space-y-4">
+                {loginError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{loginError}</AlertDescription>
+                  </Alert>
                 )}
-              </Button>
-            </form>
+                <div className="space-y-2">
+                  <Label htmlFor="username">Usuario</Label>
+                  <Input
+                    id="username"
+                    type="text"
+                    placeholder="Ingresa tu usuario"
+                    value={loginData.username}
+                    onChange={(e) => setLoginData({ ...loginData, username: e.target.value })}
+                    className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
+                    autoComplete="username"
+                    disabled={loginLoading}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="password">Contraseña</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    placeholder="Ingresa tu contraseña"
+                    value={loginData.password}
+                    onChange={(e) => setLoginData({ ...loginData, password: e.target.value })}
+                    className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
+                    autoComplete="current-password"
+                    disabled={loginLoading}
+                    required
+                  />
+                </div>
+                <div className="flex items-center text-xs text-white/80">
+                  <label className="flex items-center gap-2 select-none">
+                    <input type="checkbox" className="login-checkbox" />
+                    Recordarme
+                  </label>
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full h-11 bg-transparent hover:bg-white/10 border border-white/70 text-white shadow-[0_0_0_0] backdrop-blur-sm rounded-full transition-colors"
+                  disabled={loginLoading}
+                >
+                  {loginLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Iniciando sesión...
+                    </>
+                  ) : (
+                    'Iniciar sesión'
+                  )}
+                </Button>
+                <div className="text-center mt-2">
+                  <button
+                    type="button"
+                    className="text-blue-200 hover:underline text-xs"
+                    onClick={() => {
+                      setShowRegister(true);
+                      setRegisterError('');
+                      setRegisterSuccess(false);
+                    }}
+                  >
+                    ¿No tienes cuenta? Crear cuenta
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <form onSubmit={handleRegister} className="space-y-4">
+                {registerError && (
+                  <Alert variant="destructive">
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{registerError}</AlertDescription>
+                  </Alert>
+                )}
+                {registerSuccess && (
+                  <Alert variant="success">
+                    <CheckCircle className="h-4 w-4 text-green-400" />
+                    <AlertDescription>¡Registro exitoso! Iniciando sesión...</AlertDescription>
+                  </Alert>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="reg-email">Email</Label>
+                  <Input
+                    id="reg-email"
+                    type="email"
+                    placeholder="Elige un email"
+                    value={registerData.email}
+                    onChange={e => setRegisterData({ ...registerData, email: e.target.value })}
+                    className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
+                    autoComplete="email"
+                    disabled={registerLoading}
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="reg-password">Contraseña</Label>
+                  <Input
+                    id="reg-password"
+                    type="password"
+                    placeholder="Elige una contraseña"
+                    value={registerData.password}
+                    onChange={e => setRegisterData({ ...registerData, password: e.target.value })}
+                    className="h-11 bg-transparent text-white placeholder:text-white/80 border-0 border-b border-white/60 rounded-none focus:outline-none focus:ring-0 focus:border-white"
+                    autoComplete="new-password"
+                    disabled={registerLoading}
+                    required
+                  />
+                </div>
+                <Button
+                  type="submit"
+                  className="w-full h-11 bg-transparent hover:bg-white/10 border border-white/70 text-white shadow-[0_0_0_0] backdrop-blur-sm rounded-full transition-colors"
+                  disabled={registerLoading}
+                >
+                  {registerLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Registrando...
+                    </>
+                  ) : (
+                    'Crear cuenta'
+                  )}
+                </Button>
+                <div className="text-center mt-2">
+                  <button
+                    type="button"
+                    className="text-blue-200 hover:underline text-xs"
+                    onClick={() => setShowRegister(false)}
+                  >
+                    ¿Ya tienes cuenta? Iniciar sesión
+                  </button>
+                </div>
+              </form>
+            )}
           </CardContent>
         </Card>
 
@@ -410,16 +550,7 @@ function App() {
             background: rgba(255,255,255,0.9);
           }
           .login-checkbox:checked::before { transform: scale(1); }
-          /* Fallbacks: si el usuario prefiere menos movimiento o en pantallas pequeñas */
-          .login-poster { display: none; }
-          @media (prefers-reduced-motion: reduce) {
-            .login-video { display: none; }
-            .login-poster { display: block; }
-          }
-          @media (max-width: 640px) {
-            .login-video { display: none; }
-            .login-poster { display: block; }
-          }
+
         `}</style>
       </div>
     )
@@ -469,16 +600,7 @@ function App() {
           })}
         </nav>
 
-        <div className="absolute bottom-0 left-0 right-0 p-3 border-t bg-white lg:static lg:bg-transparent">
-          <Button
-            variant="ghost"
-            onClick={handleLogout}
-            className="w-full justify-start text-gray-700 hover:text-red-600 hover:bg-red-50"
-          >
-            <LogOut className="w-5 h-5 mr-3" />
-            Cerrar sesión
-          </Button>
-        </div>
+        {/* Logout oculto mientras el login está deshabilitado */}
       </div>
 
       {/* Mobile menu overlay */}
@@ -507,7 +629,7 @@ function App() {
             </h1>
           </div>
           <div className="text-sm text-gray-600">
-            Bienvenido, {loginData.username}
+            Bienvenido, {loginData.username || 'Invitado'}
           </div>
         </header>
 
@@ -1066,6 +1188,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
     { type: 'text', value: '' }
   ]);
   const [multiRecipientsInput, setMultiRecipientsInput] = useState('');
+  const [simpleRecipientsInput, setSimpleRecipientsInput] = useState('');
 
   // Efecto robusto para envío programado: un solo intervalo global
   useEffect(() => {
@@ -1287,6 +1410,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
     } else {
       setMessageMode('simple');
       setSelectedContacts(incomingRecipients);
+      setSimpleRecipientsInput(incomingRecipients.join(', '));
     }
     // Limpiar origen tras aplicar
     if (onRecipientsApplied) onRecipientsApplied();
@@ -1297,6 +1421,7 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
     return () => {
       setSelectedContacts([]);
       setMultiRecipientsInput('');
+      setSimpleRecipientsInput('');
     };
   }, []);
 
@@ -1423,47 +1548,30 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                   <div className="relative">
                     <textarea
                       placeholder="Escribe o pega números (separados por comas) o selecciona de abajo..."
-                      value={selectedContacts.join(', ')}
-                      onChange={(e) => {
-                        // Actualizar el valor mostrado
+                      value={simpleRecipientsInput}
+                      onChange={(e) => setSimpleRecipientsInput(e.target.value)}
+                      onBlur={(e) => {
                         const value = e.target.value;
-                        
-                        // Mantener sincronizado mientras escribe
-                        const numbers = value
-                          .split(',')
-                          .map(num => num.trim())
-                          .filter(num => num !== '');
+                        const numbers = value.split(',').map(n => n.trim()).filter(Boolean);
                         setSelectedContacts(numbers);
+                        setSimpleRecipientsInput(numbers.join(', '));
                       }}
                       onKeyDown={(e) => {
-                        // Permitir todas las teclas
                         if (e.key === 'Enter') {
                           e.preventDefault();
-                          // Procesar el texto al presionar Enter
-                          const value = e.target.value;
-                          const numbers = value
-                            .split(',')
-                            .map(num => num.trim())
-                            .filter(num => num !== '');
+                          const value = e.currentTarget.value || '';
+                          const numbers = value.split(',').map(n => n.trim()).filter(Boolean);
                           setSelectedContacts(numbers);
+                          setSimpleRecipientsInput(numbers.join(', '));
                         }
-                      }}
-                      onBlur={(e) => {
-                        // Procesar el texto al salir del campo
-                        const value = e.target.value;
-                        const numbers = value
-                          .split(',')
-                          .map(num => num.trim())
-                          .filter(num => num !== '');
-                        setSelectedContacts(numbers);
                       }}
                       className="flex min-h-[100px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 font-mono pr-10"
                       rows={3}
                     />
-                    {selectedContacts.length > 0 && (
+                    {simpleRecipientsInput && (
                       <button
                         type="button"
-                        onClick={() => setSelectedContacts([])}
+                        onClick={() => { setSelectedContacts([]); setSimpleRecipientsInput(''); }}
                         className="absolute right-3 top-3 text-gray-500 hover:text-red-500 bg-white p-1 rounded-full"
                         title="Limpiar todos"
                       >
@@ -1510,7 +1618,9 @@ function MensajesSection({ scheduledMessages, setScheduledMessages, sentMessages
                         className="flex items-center p-2 hover:bg-gray-100 rounded cursor-pointer"
                         onClick={() => {
                           if (!selectedContacts.includes(contact.number)) {
-                            setSelectedContacts(prev => [...prev, contact.number]);
+                            const newSelectedContacts = [...selectedContacts, contact.number];
+                            setSelectedContacts(newSelectedContacts);
+                            setSimpleRecipientsInput(newSelectedContacts.join(', '));
                           }
                         }}
                       >
@@ -1956,7 +2066,8 @@ function ConfiguracionSection() {
   const handleWaLogout = async () => {
     if (!window.confirm('¿Estás seguro de que deseas cerrar la sesión de WhatsApp?')) return;
     try {
-      const res = await fetch('http://localhost:3001/api/wa-logout', { method: 'POST' });
+  const { API_BASE } = require('./services/api');
+  const res = await fetch(`${API_BASE}/api/wa-logout`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         alert('Sesión de WhatsApp cerrada. Se generará un nuevo QR al reiniciar.');
@@ -1975,7 +2086,8 @@ function ConfiguracionSection() {
     try {
       setForceLoading(true);
       setForceResult(null);
-      const res = await fetch('http://localhost:3001/api/forzar-reinicio', { method: 'POST' });
+  const { API_BASE } = require('./services/api');
+  const res = await fetch(`${API_BASE}/api/forzar-reinicio`, { method: 'POST' });
       const data = await res.json();
       setForceResult(data);
       alert(data.message || 'Reinicio solicitado. Escanea el nuevo QR.');

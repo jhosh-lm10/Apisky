@@ -79,7 +79,8 @@ export function useContacts() {
     
     // Enviar al backend para persistencia
     try {
-      const response = await fetch('http://localhost:3001/api/update-segments', {
+  const { API_BASE } = require('../services/api');
+  const response = await fetch(`${API_BASE}/api/update-segments`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

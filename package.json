@@ -25,20 +25,15 @@
     "dev": "concurrently \"npm run start:backend\" \"npm run start:frontend\" \"wait-on http://localhost:5173 && electron .\"",
     "build": "cd frontend && npm run build",
     "electron": "electron .",
-    "pack": "npm run build && electron-builder --dir",
-    "pack:win": "npm run build && electron-builder --dir --win",
-    "dist": "npm run build && electron-builder",
-    "dist:win": "npm run build && electron-builder --win --dir",
-    "dist:win-installer": "npm run build && electron-builder --win",
-    "dist:mac": "npm run build && electron-builder --mac",
-    "dist:linux": "npm run build && electron-builder --linux",
-    "package:manual": "npm run build && node scripts/package-manual.js",
-    "build:exe": "npm run build && node scripts/build-exe.js",
-    "create:zip": "npm run build:exe && node scripts/create-zip.js",
-    "distribute": "npm run create:zip",
-    "build:standalone-exe": "npm run build && node scripts/build-standalone-exe.js",
-    "build:simple-exe": "npm run build && node scripts/build-simple-exe.js",
-    "create:real-exe": "npm run build && node scripts/create-real-exe.js"
+    "prepare:build": "node scripts/build-production.js",
+    "build:exe": "npm run prepare:build && electron-builder --win --dir",
+    "build:installer": "npm run prepare:build && electron-builder --win --config.win.target=nsis",
+    "build:portable": "npm run prepare:build && electron-builder --win --config.win.target=portable",
+    "build:all": "npm run prepare:build && electron-builder --win --mac --linux",
+    "dist": "npm run build:installer",
+    "pack": "npm run build:exe",
+    "test:build": "node scripts/test-build.js",
+    "postinstall": "npm run test:build"
   },
   "build": {
     "appId": "com.apisky.app",
@@ -48,21 +43,21 @@
     },
     "asar": true,
     "asarUnpack": [
+      "**/*.node",
       "Backend/**",
-      "node_modules/puppeteer/**",
-      "node_modules/@puppeteer/**",
-      "node_modules/chromium-bidi/**",
-      "Backend/node_modules/puppeteer/**",
-      "Backend/node_modules/@puppeteer/**",
-      "Backend/node_modules/chromium-bidi/**",
-      "**/*.node"
+      "node_modules/**/*"
     ],
     "files": [
       "electron/**/*",
       "Backend/**/*",
       "frontend/dist/**/*",
+      "package.json",
       "node_modules/**/*",
-      "package.json"
+      "!**/node_modules/ffprobe-static/bin/darwin/**",
+      "!**/node_modules/ffprobe-static/bin/linux/**",
+      "!**/node_modules/ffmpeg-static/bin/darwin/**",
+      "!**/node_modules/ffmpeg-static/bin/linux/**",
+      "!**/node_modules/puppeteer/.local-chromium/**"
     ],
     "extraResources": [
       {
@@ -73,28 +68,28 @@
     "win": {
       "target": [
         {
-          "target": "portable",
+          "target": "nsis",
           "arch": [
             "x64"
           ]
         }
       ],
-      "icon": "assets/icon.ico",
-      "signAndEditExecutable": false
+      "signAndEditExecutable": false,
+      "requestedExecutionLevel": "asInvoker"
     },
     "mac": {
-      "target": "dmg",
-      "icon": "assets/icon.icns"
+      "target": "dmg"
     },
     "linux": {
-      "target": "AppImage",
-      "icon": "assets/icon.png"
+      "target": "AppImage"
     },
     "nsis": {
       "oneClick": false,
+      "allowElevation": true,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
-      "createStartMenuShortcut": true
+      "createStartMenuShortcut": true,
+      "shortcutName": "Apisky"
     },
     "forceCodeSigning": false
   },
@@ -106,10 +101,12 @@
     "fs-extra": "^11.3.1",
     "nexe": "^4.0.0-beta.19",
     "pkg": "^5.8.1",
+    "png-to-ico": "^2.1.8",
     "wait-on": "^7.2.0"
   },
   "dependencies": {
     "axios": "^1.10.0",
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.5.0",
     "express": "^5.1.0",
@@ -118,9 +115,10 @@
     "fluent-ffmpeg": "^2.1.3",
     "libphonenumber-js": "^1.12.10",
     "multer": "^2.0.1",
-    "puppeteer": "13.7.0",
+    "puppeteer": "^19.7.5",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "1.23.0",
+    "whatsapp-web.js": "^1.33.2",
     "xlsx": "^0.18.5"
   }
 }

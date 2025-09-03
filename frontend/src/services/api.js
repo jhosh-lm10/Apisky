@@ -2,16 +2,22 @@
 const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:3001';
 // Servicio de autenticación simulado
 const authService = {
-  login: async ({ username, password }) => {
-    return new Promise((resolve, reject) => {
-      setTimeout(() => {
-        if (username === 'admin' && password === '123456') {
-          resolve({ success: true, message: 'Inicio de sesión exitoso' });
-        } else {
-          reject({ success: false, message: 'Credenciales inválidas' });
-        }
-      }, 1000);
-    });
+  login: async ({ email, password }) => {
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        return data;
+      } else {
+        throw new Error(data.message || 'Credenciales inválidas');
+      }
+    } catch (err) {
+      throw new Error(err.message || 'Error de red');
+    }
   },
   logout: async () => {
     try {
